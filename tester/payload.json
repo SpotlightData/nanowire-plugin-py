@@ -1,0 +1,97 @@
+{
+    "nmo": {
+        "schema_version": "1.0.0",
+        "job": {
+            "created_at": "2017-07-24T11:05:55,801624028+01:00",
+            "created_by": "n-00000000-0000-0000-0000-000000000000",
+            "user_id": "u-00000000-0000-0000-0000-000000000000",
+            "project_id": "p-00000000-0000-0000-0000-000000000000",
+            "job_id": "j-00000000-0000-0000-0000-000000000000",
+            "job_run": 0,
+            "priority": 500,
+            "workflow": [
+                {
+                    "id": "worker-extract-47a6",
+                    "parents": [
+                        "input"
+                    ],
+                    "children": [
+                        "worker-spacy-b31e"
+                    ],
+                    "config": {
+                        "name": "Extract",
+                        "author": "Barnaby Keene",
+                        "email": "barnaby@spotlightdata.co.uk",
+                        "image": "nanowire/worker_extract:2.7.5",
+                        "cmd": [
+                            "/main"
+                        ],
+                        "inputs": [
+                            "source",
+                            "nmo"
+                        ],
+                        "outputs": [
+                            "plugin",
+                            "text"
+                        ],
+                        "cpu": "10m",
+                        "memory": "50M",
+                        "lines_formatted_support": true,
+                        "env": {
+                            "DEBUG": "0"
+                        }
+                    },
+                    "env": {
+                        "DEBUG": "1"
+                    },
+                    "lines_formatted": false
+                },
+                {
+                    "id": "worker-spacy-b31e",
+                    "parents": [
+                        "worker-extract-47a6"
+                    ],
+                    "children": [],
+                    "config": {
+                        "name": "Spacy",
+                        "author": "Barnaby Keene",
+                        "email": "barnaby@spotlightdata.co.uk",
+                        "image": "nanowire/worker_spacy:1.0.0",
+                        "cmd": [
+                            "python3",
+                            "main.py"
+                        ],
+                        "inputs": [
+                            "text"
+                        ],
+                        "outputs": [
+                            "plugin"
+                        ],
+                        "cpu": "10m",
+                        "memory": "50M",
+                        "lines_formatted_support": true,
+                        "env": {
+                            "DEBUG": "0",
+                            "SPAAS_HOST": "http://spacy.spotlightdata.co.uk"
+                        }
+                    },
+                    "env": {
+                        "DEBUG": "1",
+                        "SPAAS_HOST": "spacy.default"
+                    },
+                    "lines_formatted": false
+                }
+            ]
+        },
+        "task": {
+            "created_at": "2017-07-24T11:05:55,801624028+01:00",
+            "created_by": "n-00000000-0000-0000-0000-000000000000",
+            "task_id": "t-00000000-0000-0000-0000-000000000000",
+            "parent": "t-10000000-0000-0000-0000-000000000000"
+        },
+        "source": {
+            "name": "document.docx"
+        }
+    },
+    "jsonld": {}
+}
