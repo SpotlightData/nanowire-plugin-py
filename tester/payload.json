@@ -90,7 +90,7 @@
             "parent": "t-10000000-0000-0000-0000-000000000000"
         },
         "source": {
-            "name": "document.docx"
+            "name": "testfile.txt"
         }
     },
     "jsonld": {}
