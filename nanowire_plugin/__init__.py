@@ -65,7 +65,7 @@ def bind(function: callable, name: str, version="1.0.0"):
             next_plugin = get_next_plugin(name, obj["job"]["workflow"])
             if next_plugin is None:
                 logging.error("next plugin could not be determined", extra={
-                              "job_id": job_id, "task_id": task_id})
+                    "job_id": job_id, "task_id": task_id})
                 return
 
             if not ensure_this_plugin(name, obj["job"]["workflow"]):
@@ -78,7 +78,7 @@ def bind(function: callable, name: str, version="1.0.0"):
 
             if not minio_client.bucket_exists(job_id):
                 logging.error("job_id does not have a bucket", extra={
-                              "job_id": job_id, "task_id": task_id})
+                    "job_id": job_id, "task_id": task_id})
                 return
 
             try:
@@ -94,7 +94,7 @@ def bind(function: callable, name: str, version="1.0.0"):
 
             if result is not None:
                 if not isinstance(result, dict):
-                    result = loads(result)
+                    raise TypeError("return value must be of type dict")
 
                 if "jsonld" in result:
                     result = result["jsonld"]
@@ -110,12 +110,12 @@ def bind(function: callable, name: str, version="1.0.0"):
             next_plugin = get_next_plugin(name, obj["nmo"]["job"]["workflow"])
             if next_plugin is None:
                 logging.error("next plugin could not be determined", extra={
-                              "job_id": job_id, "task_id": task_id})
+                    "job_id": job_id, "task_id": task_id})
                 return
 
             if not ensure_this_plugin(name, obj["job"]["workflow"]):
                 logging.error("declared plugin name does not match workflow", extra={
-                              "job_id": job_id, "task_id": task_id})
+                    "job_id": job_id, "task_id": task_id})
                 return
 
             result = {
