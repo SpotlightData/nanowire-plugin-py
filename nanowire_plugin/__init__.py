@@ -51,7 +51,7 @@ def bind(function: callable, name: str, version="1.0.0"):
             logging.error(exp)
             return
 
-        validate_payload(payload)
+        validate_payload(payload, name)
 
         next_plugin = get_next_plugin(name, payload["nmo"]["job"]["workflow"])
         if next_plugin is None:
@@ -64,7 +64,7 @@ def bind(function: callable, name: str, version="1.0.0"):
             payload["nmo"]["task"]["task_id"],
             "input",
             "source",
-            payload["nmo"]["sources"][0]["name"])
+            payload["nmo"]["source"]["name"])
 
         if not minio_client.bucket_exists(payload["nmo"]["job"]["job_id"]):
             logging.error("job_id does not have a bucket", extra={
@@ -102,7 +102,7 @@ def bind(function: callable, name: str, version="1.0.0"):
         output_channel.basic_publish(
             "",
             next_plugin,
-            payload
+            dumps(payload)
         )
 
     logging.debug("consuming from", extra={"queue": name})
@@ -116,7 +116,7 @@ def bind(function: callable, name: str, version="1.0.0"):
     input_channel.basic_consume(
         send,
         name,
-        no_ack=True,
+        no_ack=False,
         exclusive=False,
     )
 
@@ -128,7 +128,7 @@ def bind(function: callable, name: str, version="1.0.0"):
         raise exp
 
 
-def validate_payload(payload: dict):
+def validate_payload(payload: dict, name: str):
     if "job" not in payload["nmo"]:
         logging.error("no job in nmo")
         return

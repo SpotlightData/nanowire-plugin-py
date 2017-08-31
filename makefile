@@ -1,6 +1,9 @@
 install:
 	sudo ./setup.py install
 
+upload:
+	mc cp tester/testfile.txt local/j-00000000-0000-0000-0000-000000000000/t-00000000-0000-0000-0000-000000000000/input/source/testfile.txt
+
 test: install
 	AMQP_HOST="localhost" \
 	AMQP_PORT="5672" \
@@ -13,7 +16,7 @@ test: install
 	MINIO_SCHEME="http" \
 	./tester/__init__.py
 
-upload:
+release:
 	./setup.py sdist bdist_wheel
 	twine upload dist/nanowire_plugin-0.1.4.linux-x86_64.tar.gz
 	twine upload dist/nanowire_plugin-0.1.4-py2-none-any.whl
