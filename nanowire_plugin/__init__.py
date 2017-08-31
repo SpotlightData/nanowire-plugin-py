@@ -43,93 +43,67 @@ def bind(function: callable, name: str, version="1.0.0"):
             "method": method,
             "properties": properties})
 
-        payload = body.decode("utf-8")
+        raw = body.decode("utf-8")
 
         try:
-            obj = loads(payload)
+            payload = loads(raw)
         except decoder.JSONDecodeError as exp:
             logging.error(exp)
             return
 
-        if "jsonld" not in obj:  # first plugin, downloads file
-            if "job" not in obj:
-                logging.error("no job in nmo")
-                return
+        validate_payload(payload)
 
-            if "task" not in obj:
-                logging.error("no task in nmo")
-                return
+        next_plugin = get_next_plugin(name, payload["nmo"]["job"]["workflow"])
+        if next_plugin is None:
+            logging.error("next plugin could not be determined", extra={
+                "job_id": payload["nmo"]["job"]["job_id"],
+                "task_id": payload["nmo"]["task"]["task_id"]})
+            return
 
-            job_id = obj["job"]["job_id"]
-            task_id = obj["task"]["task_id"]
-            next_plugin = get_next_plugin(name, obj["job"]["workflow"])
-            if next_plugin is None:
-                logging.error("next plugin could not be determined", extra={
-                    "job_id": job_id, "task_id": task_id})
-                return
+        path = join(
+            payload["nmo"]["task"]["task_id"],
+            "input",
+            "source",
+            payload["nmo"]["sources"][0]["name"])
 
-            if not ensure_this_plugin(name, obj["job"]["workflow"]):
-                logging.error("declared plugin name does not match workflow", extra={
-                    "job_id": job_id, "task_id": task_id})
-                return
+        if not minio_client.bucket_exists(payload["nmo"]["job"]["job_id"]):
+            logging.error("job_id does not have a bucket", extra={
+                "job_id": payload["nmo"]["job"]["job_id"],
+                "task_id": payload["nmo"]["task"]["task_id"]})
+            return
 
-            path = join(task_id, "input", "source", obj["sources"][0]["name"])
-            result = None
+        try:
+            url = minio_client.presigned_get_object(payload["nmo"]["job"]["job_id"], path)
 
-            if not minio_client.bucket_exists(job_id):
-                logging.error("job_id does not have a bucket", extra={
-                    "job_id": job_id, "task_id": task_id})
-                return
+        except AccessDenied as exp:
+            logging.error(exp, extra={
+                "job_id": payload["nmo"]["job"]["job_id"],
+                "task_id": payload["nmo"]["task"]["task_id"]})
+            return
 
-            try:
-                response = minio_client.get_object(job_id, path)
-                initial = response.data
+        # calls the user function to mutate the JSON-LD data
 
-                result = function(initial)
+        result = function(payload["nmo"], payload["jsonld"], url)
 
-            except AccessDenied as exp:
-                logging.error(exp, extra={
-                    "job_id": job_id, "task_id": task_id})
-                return
+        if result is None:
+            raise TypeError("return value is None")
 
-            if result is not None:
-                if not isinstance(result, dict):
-                    raise TypeError("return value must be of type dict")
+        if not isinstance(result, dict):
+            raise TypeError("return value must be of type dict")
 
-                if "jsonld" in result:
-                    result = result["jsonld"]
-                else:
-                    result = result
+        if "jsonld" in result:
+            result = result["jsonld"]
+        else:
+            result = result
 
-                result = dumps({
-                    "nmo": obj,
-                    "jsonld": result
-                })
+        payload["jsonld"] = result
 
-        else:  # other plugins, operates on json-ld
-            next_plugin = get_next_plugin(name, obj["nmo"]["job"]["workflow"])
-            if next_plugin is None:
-                logging.error("next plugin could not be determined", extra={
-                    "job_id": job_id, "task_id": task_id})
-                return
-
-            if not ensure_this_plugin(name, obj["job"]["workflow"]):
-                logging.error("declared plugin name does not match workflow", extra={
-                    "job_id": job_id, "task_id": task_id})
-                return
-
-            result = {
-                "nmo": obj["nmo"],
-                "jsonld": function(body)
-            }
-
-        if result is not None:
-            output_channel.queue_declare(next_plugin)
-            output_channel.basic_publish(
-                "",
-                next_plugin,
-                result
-            )
+        output_channel.queue_declare(next_plugin)
+        output_channel.basic_publish(
+            "",
+            next_plugin,
+            payload
+        )
 
     logging.debug("consuming from", extra={"queue": name})
     input_channel.queue_declare(
@@ -152,6 +126,22 @@ def bind(function: callable, name: str, version="1.0.0"):
         input_channel.stop_consuming()
         connection.close()
         raise exp
+
+
+def validate_payload(payload: dict):
+    if "job" not in payload["nmo"]:
+        logging.error("no job in nmo")
+        return
+
+    if "task" not in payload["nmo"]:
+        logging.error("no task in nmo")
+        return
+
+    if not ensure_this_plugin(name, payload["nmo"]["job"]["workflow"]):
+        logging.error("declared plugin name does not match workflow", extra={
+            "job_id": payload["nmo"]["job"]["job_id"],
+            "task_id": payload["nmo"]["task"]["task_id"]})
+        return
 
 
 def ensure_this_plugin(this_plugin: str, workflow: list)->bool:

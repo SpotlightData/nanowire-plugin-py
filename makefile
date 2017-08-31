@@ -12,3 +12,10 @@ test: install
 	MINIO_SECRET="12345678" \
 	MINIO_SCHEME="http" \
 	./tester/__init__.py
+
+upload:
+	./setup.py sdist bdist_wheel
+	twine upload dist/nanowire_plugin-0.1.4.linux-x86_64.tar.gz
+	twine upload dist/nanowire_plugin-0.1.4-py2-none-any.whl
+	twine upload dist/nanowire_plugin-0.1.4-py3-none-any.whl
+	twine upload dist/nanowire_plugin-0.1.4.tar.gz

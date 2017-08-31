@@ -3,8 +3,8 @@
 import sld
 
 
-def entry(data):
-    print(data)
+def entry(nmo: dict, jsonld: dict, source: str) -> dict:
+    print(nmo["job"]["job_id"], nmo["task"]["task_id"], jsonld)
     return {"@type": "TextDigitalDocument"}
 
 sld.bind(entry, "extract")
