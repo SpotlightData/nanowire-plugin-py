@@ -7,7 +7,7 @@ with open("VERSION") as f:
     VERSION = f.read()
 
 setup(
-    name='nanowire-plugin-py',
+    name='nanowire_plugin',
     version=VERSION,
     packages=['nanowire_plugin'],
     requires=['pika', 'minio'],
