@@ -1,3 +1,6 @@
+VERSION := $(shell cat VERSION)
+
+
 install:
 	sudo ./setup.py install
 
@@ -18,7 +21,5 @@ test: install
 
 release:
 	./setup.py sdist bdist_wheel
-	twine upload dist/nanowire_plugin-0.1.4.linux-x86_64.tar.gz
-	twine upload dist/nanowire_plugin-0.1.4-py2-none-any.whl
-	twine upload dist/nanowire_plugin-0.1.4-py3-none-any.whl
-	twine upload dist/nanowire_plugin-0.1.4.tar.gz
+	twine upload dist/nanowire_plugin-$(VERSION)-py3-none-any.whl
+	twine upload dist/nanowire_plugin-$(VERSION).tar.gz
