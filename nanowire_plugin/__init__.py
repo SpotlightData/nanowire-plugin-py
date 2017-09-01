@@ -49,6 +49,7 @@ def bind(function: callable, name: str, version="1.0.0"):
             payload = loads(raw)
         except decoder.JSONDecodeError as exp:
             logging.error(exp)
+            input_channel.basic_reject(method.delivery_tag, True)
             return
 
         validate_payload(payload, name)
@@ -69,6 +70,7 @@ def bind(function: callable, name: str, version="1.0.0"):
             logging.error("job_id does not have a bucket", extra={
                 "job_id": payload["nmo"]["job"]["job_id"],
                 "task_id": payload["nmo"]["task"]["task_id"]})
+                input_channel.basic_reject(method.delivery_tag, True)
             return
 
         try:
@@ -78,6 +80,7 @@ def bind(function: callable, name: str, version="1.0.0"):
             logging.error(exp, extra={
                 "job_id": payload["nmo"]["job"]["job_id"],
                 "task_id": payload["nmo"]["task"]["task_id"]})
+                input_channel.basic_reject(method.delivery_tag, True)
             return
 
         # calls the user function to mutate the JSON-LD data
@@ -85,9 +88,11 @@ def bind(function: callable, name: str, version="1.0.0"):
         result = function(payload["nmo"], payload["jsonld"], url)
 
         if result is None:
+            input_channel.basic_reject(method.delivery_tag, True)
             raise TypeError("return value is None")
 
         if not isinstance(result, dict):
+            input_channel.basic_reject(method.delivery_tag, True)
             raise TypeError("return value must be of type dict, not %s" % (type(result)))
 
         if "jsonld" in result:
@@ -100,6 +105,8 @@ def bind(function: callable, name: str, version="1.0.0"):
         logging.debug("finished running user code", extra={
             "job_id": payload["nmo"]["job"]["job_id"],
             "task_id": payload["nmo"]["task"]["task_id"]})
+
+        input_channel.basic_ack(method.delivery_tag)
 
         output_channel.queue_declare(next_plugin)
         output_channel.basic_publish(
