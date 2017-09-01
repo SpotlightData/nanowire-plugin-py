@@ -55,10 +55,9 @@ def bind(function: callable, name: str, version="1.0.0"):
 
         next_plugin = get_next_plugin(name, payload["nmo"]["job"]["workflow"])
         if next_plugin is None:
-            logging.error("next plugin could not be determined", extra={
+            logging.debug("this is the final plugin", extra={
                 "job_id": payload["nmo"]["job"]["job_id"],
                 "task_id": payload["nmo"]["task"]["task_id"]})
-            return
 
         path = join(
             payload["nmo"]["task"]["task_id"],
