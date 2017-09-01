@@ -97,6 +97,10 @@ def bind(function: callable, name: str, version="1.0.0"):
 
         payload["jsonld"] = result
 
+        logging.debug("finished running user code", extra={
+            "job_id": payload["nmo"]["job"]["job_id"],
+            "task_id": payload["nmo"]["task"]["task_id"]})
+
         output_channel.queue_declare(next_plugin)
         output_channel.basic_publish(
             "",
