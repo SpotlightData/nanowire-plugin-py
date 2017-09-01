@@ -88,7 +88,7 @@ def bind(function: callable, name: str, version="1.0.0"):
             raise TypeError("return value is None")
 
         if not isinstance(result, dict):
-            raise TypeError("return value must be of type dict, not %s", % (type(result)))
+            raise TypeError("return value must be of type dict, not %s" % (type(result)))
 
         if "jsonld" in result:
             result = result["jsonld"]
