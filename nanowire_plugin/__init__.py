@@ -110,7 +110,7 @@ def bind(function: callable, name: str, version="1.0.0"):
 
         output_channel.queue_declare(
             next_plugin,
-            True,
+            False,
             True,
             False,
             False,
@@ -124,7 +124,7 @@ def bind(function: callable, name: str, version="1.0.0"):
     logging.debug("consuming from", extra={"queue": name})
     input_channel.queue_declare(
         name,
-        True,
+        False,
         True,
         False,
         False,
