@@ -80,7 +80,7 @@ def bind(function: callable, name: str, version="1.0.0"):
             logging.error(exp, extra={
                 "job_id": payload["nmo"]["job"]["job_id"],
                 "task_id": payload["nmo"]["task"]["task_id"]})
-                input_channel.basic_reject(method.delivery_tag, True)
+            input_channel.basic_reject(method.delivery_tag, True)
             return
 
         # calls the user function to mutate the JSON-LD data
