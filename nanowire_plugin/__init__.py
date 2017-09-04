@@ -85,7 +85,10 @@ def bind(function: callable, name: str, version="1.0.0"):
 
         # calls the user function to mutate the JSON-LD data
 
-        result = function(payload["nmo"], payload["jsonld"], url)
+        try:
+            result = function(payload["nmo"], payload["jsonld"], url)
+        except Exception as exp:
+            logging.error(exp)
 
         if result is None:
             input_channel.basic_reject(method.delivery_tag, True)
