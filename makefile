@@ -21,5 +21,5 @@ test: install
 
 release:
 	./setup.py sdist bdist_wheel
-	twine upload dist/nanowire_plugin-$(VERSION)-py3-none-any.whl
+	-twine upload dist/nanowire_plugin-$(VERSION)-py3-none-any.whl
 	twine upload dist/nanowire_plugin-$(VERSION).tar.gz

@@ -89,6 +89,7 @@ def bind(function: callable, name: str, version="1.0.0"):
             result = function(payload["nmo"], payload["jsonld"], url)
         except Exception as exp:
             logging.error(exp)
+            return
 
         if result is None:
             input_channel.basic_reject(method.delivery_tag, True)
