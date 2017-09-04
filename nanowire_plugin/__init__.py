@@ -89,11 +89,13 @@ def bind(function: callable, name: str, version="1.0.0"):
 
         if result is None:
             input_channel.basic_reject(method.delivery_tag, True)
-            raise TypeError("return value is None")
+            logging.error("return value is None")
+            return
 
         if not isinstance(result, dict):
             input_channel.basic_reject(method.delivery_tag, True)
-            raise TypeError("return value must be of type dict, not %s" % (type(result)))
+            logging.error("return value must be of type dict, not %s", type(result))
+            return
 
         if "jsonld" in result:
             result = result["jsonld"]
