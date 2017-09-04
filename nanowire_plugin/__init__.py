@@ -108,7 +108,13 @@ def bind(function: callable, name: str, version="1.0.0"):
 
         input_channel.basic_ack(method.delivery_tag)
 
-        output_channel.queue_declare(next_plugin)
+        output_channel.queue_declare(
+            next_plugin,
+            True,
+            True,
+            False,
+            False,
+        )
         output_channel.basic_publish(
             "",
             next_plugin,
