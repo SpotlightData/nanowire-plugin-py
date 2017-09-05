@@ -18,9 +18,10 @@ from minio.error import AccessDenied
 def bind(function: callable, name: str, version="1.0.0"):
     """binds a function to the input message queue"""
 
-    credentials = pika.PlainCredentials(environ["AMQP_USER"], environ["AMQP_PASS"])
     parameters = pika.ConnectionParameters(
-        host=environ["AMQP_HOST"], port=int(environ["AMQP_PORT"]), credentials=credentials)
+        host=environ["AMQP_HOST"],
+        port=int(environ["AMQP_PORT"]),
+        credentials=pika.PlainCredentials(environ["AMQP_USER"], environ["AMQP_PASS"]))
 
     connection = pika.BlockingConnection(parameters)
     input_channel = connection.channel()
@@ -56,7 +57,9 @@ def bind(function: callable, name: str, version="1.0.0"):
             input_channel.basic_reject(method.delivery_tag, True)
             return
 
-        validate_payload(payload, name)
+        if not validate_payload(payload, name):
+            input_channel.basic_reject(method.delivery_tag, True)
+            return
 
         next_plugin = get_next_plugin(name, payload["nmo"]["job"]["workflow"])
         if next_plugin is None:
@@ -152,36 +155,47 @@ def bind(function: callable, name: str, version="1.0.0"):
         False,
         False,
     )
-    input_channel.basic_consume(
-        send,
-        name,
-        no_ack=False,
-        exclusive=False,
-    )
 
     try:
-        input_channel.start_consuming()
+        while True:
+            method_frame, header_frame, body = input_channel.basic_get(name)
+            if (method_frame, header_frame, body) == (None, None, None):
+                continue  # queue empty
+
+            if body is None:
+                logging.error("body received was empty")
+                continue  # body empty
+
+            send(input_channel, method_frame, header_frame, body)
+
     except pika.exceptions.RecursionError as exp:
         input_channel.stop_consuming()
         connection.close()
         raise exp
 
 
-def validate_payload(payload: dict, name: str):
+def validate_payload(payload: dict, name: str) -> bool:
     """ensures payload includes the required metadata and this plugin is in there"""
+
+    if "nmo" not in payload:
+        logging.error("no job in nmo")
+        return False
+
     if "job" not in payload["nmo"]:
         logging.error("no job in nmo")
-        return
+        return False
 
     if "task" not in payload["nmo"]:
         logging.error("no task in nmo")
-        return
+        return False
 
     if not ensure_this_plugin(name, payload["nmo"]["job"]["workflow"]):
         logging.error("declared plugin name does not match workflow", extra={
             "job_id": payload["nmo"]["job"]["job_id"],
             "task_id": payload["nmo"]["task"]["task_id"]})
-        return
+        return False
+
+    return True
 
 
 def ensure_this_plugin(this_plugin: str, workflow: list)->bool:
