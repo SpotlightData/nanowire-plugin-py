@@ -7,6 +7,8 @@ import logging
 from json import loads, dumps, decoder
 from os import environ
 from os.path import join
+import urllib
+import time
 
 import pika
 from minio import Minio
@@ -32,6 +34,8 @@ def bind(function: callable, name: str, version="1.0.0"):
     minio_client.set_app_info(name, version)
 
     minio_client.list_buckets()
+
+    monitor_url = environ["MONITOR_URL"]
 
     logging.info("initialised sld lib")
 
@@ -112,20 +116,33 @@ def bind(function: callable, name: str, version="1.0.0"):
             "job_id": payload["nmo"]["job"]["job_id"],
             "task_id": payload["nmo"]["task"]["task_id"]})
 
+        try:
+            urllib.request.Request(
+                join(monitor_url, "/v1/task/status/",
+                     payload["nmo"]["job"]["job_id"], payload["nmo"]["task"]["task_id"]),
+                data=dumps({
+                    "t": "",
+                    "p": int(time.time())
+                }).encode(),
+                headers={"Content-Type: application/json"})
+        except Exception as exp:
+            logging.error(exp)
+
         input_channel.basic_ack(method.delivery_tag)
 
-        output_channel.queue_declare(
-            next_plugin,
-            False,
-            True,
-            False,
-            False,
-        )
-        output_channel.basic_publish(
-            "",
-            next_plugin,
-            dumps(payload)
-        )
+        if next_plugin:
+            output_channel.queue_declare(
+                next_plugin,
+                False,
+                True,
+                False,
+                False,
+            )
+            output_channel.basic_publish(
+                "",
+                next_plugin,
+                dumps(payload)
+            )
 
     logging.debug("consuming from", extra={"queue": name})
     input_channel.queue_declare(
@@ -151,6 +168,7 @@ def bind(function: callable, name: str, version="1.0.0"):
 
 
 def validate_payload(payload: dict, name: str):
+    """ensures payload includes the required metadata and this plugin is in there"""
     if "job" not in payload["nmo"]:
         logging.error("no job in nmo")
         return
@@ -167,6 +185,7 @@ def validate_payload(payload: dict, name: str):
 
 
 def ensure_this_plugin(this_plugin: str, workflow: list)->bool:
+    """ensures the current plugin is present in the workflow"""
     for workpipe in workflow:
         if workpipe["config"]["name"] == this_plugin:
             return True
@@ -174,6 +193,7 @@ def ensure_this_plugin(this_plugin: str, workflow: list)->bool:
 
 
 def get_next_plugin(this_plugin: str, workflow: list) -> str:
+    """returns the next plugin in the sequence"""
     found = False
     for workpipe in workflow:
         if not found:
