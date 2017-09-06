@@ -148,16 +148,10 @@ def bind(function: callable, name: str, version="1.0.0"):
             )
 
     logging.debug("consuming from", extra={"queue": name})
-    input_channel.queue_declare(
-        name,
-        False,
-        True,
-        False,
-        False,
-    )
 
     try:
         while True:
+            input_channel.queue_declare(name, False, True)
             method_frame, header_frame, body = input_channel.basic_get(name)
             if (method_frame, header_frame, body) == (None, None, None):
                 continue  # queue empty
