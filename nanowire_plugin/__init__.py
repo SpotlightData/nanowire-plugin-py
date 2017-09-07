@@ -32,7 +32,7 @@ class ProcessingError(Exception):
     def __init__(self, message: str, job_id: str=None, task_id: str=None, extra: dict=None):
         super(ProcessingError, self).__init__(message)
         self.message = message
-        self.extra = extra
+        self.extra = extra or {}
         self.meta = {"job_id": job_id, "task_id": task_id}
 
 
@@ -88,8 +88,8 @@ def bind(function: callable, name: str, version="1.0.0"):
         if not minio_client.bucket_exists(payload["nmo"]["job"]["job_id"]):
             raise ProcessingError(
                 "job_id does not have a bucket",
-                job_id: payload["nmo"]["job"]["job_id"],
-                task_id: payload["nmo"]["task"]["task_id"])
+                job_id=payload["nmo"]["job"]["job_id"],
+                task_id=payload["nmo"]["task"]["task_id"])
 
         url = minio_client.presigned_get_object(payload["nmo"]["job"]["job_id"], path)
 
