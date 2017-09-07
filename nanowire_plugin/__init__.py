@@ -11,8 +11,29 @@ import urllib
 import time
 
 import pika
+from pythonjsonlogger import jsonlogger
 from minio import Minio
 from minio.error import AccessDenied
+
+
+LOG = logging.getLogger()
+HND = logging.StreamHandler()
+HND.setFormatter(jsonlogger.JsonFormatter())
+LOG.addHandler(HND)
+
+
+class ProcessingError(Exception):
+    """Exception raised for errors during processing.
+
+    Attributes:
+        message -- explanation of the error
+    """
+
+    def __init__(self, message: str, job_id: str=None, task_id: str=None, extra: dict=None):
+        super(ProcessingError, self).__init__(message)
+        self.message = message
+        self.extra = extra
+        self.meta = {"job_id": job_id, "task_id": task_id}
 
 
 def bind(function: callable, name: str, version="1.0.0"):
@@ -49,17 +70,8 @@ def bind(function: callable, name: str, version="1.0.0"):
             "properties": properties})
 
         raw = body.decode("utf-8")
-
-        try:
-            payload = loads(raw)
-        except decoder.JSONDecodeError as exp:
-            logging.error(exp)
-            input_channel.basic_reject(method.delivery_tag, True)
-            return
-
-        if not validate_payload(payload, name):
-            input_channel.basic_reject(method.delivery_tag, True)
-            return
+        payload = loads(raw)
+        validate_payload(payload, name)
 
         next_plugin = get_next_plugin(name, payload["nmo"]["job"]["workflow"])
         if next_plugin is None:
@@ -74,39 +86,26 @@ def bind(function: callable, name: str, version="1.0.0"):
             payload["nmo"]["source"]["name"])
 
         if not minio_client.bucket_exists(payload["nmo"]["job"]["job_id"]):
-            logging.error("job_id does not have a bucket", extra={
-                "job_id": payload["nmo"]["job"]["job_id"],
-                "task_id": payload["nmo"]["task"]["task_id"]})
-            input_channel.basic_reject(method.delivery_tag, True)
-            return
+            raise ProcessingError(
+                "job_id does not have a bucket",
+                job_id: payload["nmo"]["job"]["job_id"],
+                task_id: payload["nmo"]["task"]["task_id"])
 
-        try:
-            url = minio_client.presigned_get_object(payload["nmo"]["job"]["job_id"], path)
-
-        except AccessDenied as exp:
-            logging.error(exp, extra={
-                "job_id": payload["nmo"]["job"]["job_id"],
-                "task_id": payload["nmo"]["task"]["task_id"]})
-            input_channel.basic_reject(method.delivery_tag, True)
-            return
+        url = minio_client.presigned_get_object(payload["nmo"]["job"]["job_id"], path)
 
         # calls the user function to mutate the JSON-LD data
 
-        try:
-            result = function(payload["nmo"], payload["jsonld"], url)
-        except Exception as exp:
-            logging.error(exp)
-            return
+        result = function(payload["nmo"], payload["jsonld"], url)
+
+        # if there are issues, just use the input and carry on the pipeline
 
         if result is None:
-            input_channel.basic_reject(method.delivery_tag, True)
             logging.error("return value is None")
-            return
+            result = payload["jsonld"]
 
         if not isinstance(result, dict):
-            input_channel.basic_reject(method.delivery_tag, True)
             logging.error("return value must be of type dict, not %s", type(result))
-            return
+            result = payload["jsonld"]
 
         if "jsonld" in result:
             result = result["jsonld"]
@@ -128,6 +127,7 @@ def bind(function: callable, name: str, version="1.0.0"):
                     "p": int(time.time())
                 }).encode(),
                 headers={"Content-Type: application/json"})
+
         except Exception as exp:
             logging.error(exp)
 
@@ -160,7 +160,16 @@ def bind(function: callable, name: str, version="1.0.0"):
                 logging.error("body received was empty")
                 continue  # body empty
 
-            send(input_channel, method_frame, header_frame, body)
+            try:
+                send(input_channel, method_frame, header_frame, body)
+
+            except ProcessingError as exp:
+                input_channel.basic_reject(method_frame.delivery_tag, False)
+                logging.error("Processing Error: " + exp.message, extra={**exp.meta, **exp.extra})
+
+            except Exception as exp:
+                input_channel.basic_reject(method_frame.delivery_tag, False)
+                logging.error("Other Error: " + exp)
 
     except pika.exceptions.RecursionError as exp:
         input_channel.stop_consuming()
@@ -172,24 +181,19 @@ def validate_payload(payload: dict, name: str) -> bool:
     """ensures payload includes the required metadata and this plugin is in there"""
 
     if "nmo" not in payload:
-        logging.error("no job in nmo")
-        return False
+        raise ProcessingError("no job in nmo")
 
     if "job" not in payload["nmo"]:
-        logging.error("no job in nmo")
-        return False
+        raise ProcessingError("no job in nmo")
 
     if "task" not in payload["nmo"]:
-        logging.error("no task in nmo")
-        return False
+        raise ProcessingError("no task in nmo")
 
     if not ensure_this_plugin(name, payload["nmo"]["job"]["workflow"]):
-        logging.error("declared plugin name does not match workflow", extra={
-            "job_id": payload["nmo"]["job"]["job_id"],
-            "task_id": payload["nmo"]["task"]["task_id"]})
-        return False
-
-    return True
+        raise ProcessingError(
+            "declared plugin name does not match workflow",
+            job_id=payload["nmo"]["job"]["job_id"],
+            task_id=payload["nmo"]["task"]["task_id"])
 
 
 def ensure_this_plugin(this_plugin: str, workflow: list)->bool:
