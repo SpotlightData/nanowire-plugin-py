@@ -118,19 +118,6 @@ def bind(function: callable, name: str, version="1.0.0"):
             "job_id": payload["nmo"]["job"]["job_id"],
             "task_id": payload["nmo"]["task"]["task_id"]})
 
-        try:
-            urllib.request.Request(
-                join(monitor_url, "/v1/task/status/",
-                     payload["nmo"]["job"]["job_id"], payload["nmo"]["task"]["task_id"]),
-                data=dumps({
-                    "t": "",
-                    "p": int(time.time())
-                }).encode(),
-                headers={"Content-Type: application/json"})
-
-        except Exception as exp:
-            logging.error(exp)
-
         input_channel.basic_ack(method.delivery_tag)
 
         if next_plugin:
@@ -147,6 +134,8 @@ def bind(function: callable, name: str, version="1.0.0"):
                 dumps(payload)
             )
 
+        return {"job_id": payload["nmo"]["job"]["job_id"], "task_id": payload["nmo"]["task"]["task_id"]}
+
     logging.debug("consuming from", extra={"queue": name})
 
     try:
@@ -160,16 +149,37 @@ def bind(function: callable, name: str, version="1.0.0"):
                 logging.error("body received was empty")
                 continue  # body empty
 
+            meta = {}
+
             try:
-                send(input_channel, method_frame, header_frame, body)
+                meta = send(input_channel, method_frame, header_frame, body)
 
             except ProcessingError as exp:
                 input_channel.basic_reject(method_frame.delivery_tag, False)
                 logging.error("Processing Error: " + exp.message, extra={**exp.meta, **exp.extra})
 
+                urllib.request.Request(
+                    join(monitor_url, "/v2/task/status/",
+                         exp.meta["job_id"], exp.meta["task_id"]),
+                    data=dumps({
+                        "t": int(time.time()),
+                        "p": name,
+                        "e": exp.message
+                    }).encode(),
+                    headers={"Content-Type: application/json"})
+
             except Exception as exp:
                 input_channel.basic_reject(method_frame.delivery_tag, False)
                 logging.error("Other Error: " + exp)
+
+            urllib.request.Request(
+                join(monitor_url, "/v2/task/status/",
+                     meta["job_id"], meta["task_id"]),
+                data=dumps({
+                    "t": int(time.time()),
+                    "p": name
+                }).encode(),
+                headers={"Content-Type: application/json"})
 
     except pika.exceptions.RecursionError as exp:
         input_channel.stop_consuming()
