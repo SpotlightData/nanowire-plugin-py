@@ -19,7 +19,7 @@
                         "worker-spacy-b31e"
                     ],
                     "config": {
-                        "name": "Extract",
+                        "name": "extract",
                         "author": "Barnaby Keene",
                         "email": "barnaby@spotlightdata.co.uk",
                         "image": "nanowire/worker_extract:2.7.5",
@@ -53,7 +53,7 @@
                     ],
                     "children": [],
                     "config": {
-                        "name": "Spacy",
+                        "name": "spacy",
                         "author": "Barnaby Keene",
                         "email": "barnaby@spotlightdata.co.uk",
                         "image": "nanowire/worker_spacy:1.0.0",
