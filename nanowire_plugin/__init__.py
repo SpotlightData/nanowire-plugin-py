@@ -59,7 +59,11 @@ def bind(function: callable, name: str, version="1.0.0"):
 
     monitor_url = environ["MONITOR_URL"]
 
-    logging.info("initialised sld lib")
+    logging.info("initialised sld lib", extra={
+        "monitor_url": monitor_url,
+        "minio": environ["MINIO_HOST"],
+        "rabbit": environ["AMQP_HOST"]
+    })
 
     def send(chan, method, properties, body: str):
         """unwraps a message and calls the user function"""
@@ -134,7 +138,10 @@ def bind(function: callable, name: str, version="1.0.0"):
                 dumps(payload)
             )
 
-        return {"job_id": payload["nmo"]["job"]["job_id"], "task_id": payload["nmo"]["task"]["task_id"]}
+        return {
+            "job_id": payload["nmo"]["job"]["job_id"],
+            "task_id": payload["nmo"]["task"]["task_id"]
+        }
 
     logging.info("consuming from", extra={"queue": name})
 
