@@ -171,7 +171,7 @@ def bind(function: callable, name: str, version="1.0.0"):
                 input_channel.basic_reject(method_frame.delivery_tag, False)
                 logging.error("Processing Error: " + exp.message, extra={**exp.meta, **exp.extra})
 
-                urllib.request.Request(
+                req = urllib.request.Request(
                     urllib.parse.urljoin(
                         monitor_url,
                         "/v2/task/status/%s/%s" % (exp.meta["job_id"], exp.meta["task_id"])),
@@ -180,13 +180,16 @@ def bind(function: callable, name: str, version="1.0.0"):
                         "p": name,
                         "e": exp.message
                     }).encode(),
-                    headers={"Content-Type": "application/json"})
+                    headers={
+                        "Content-Type": "application/json"
+                    })
+                resp = urllib.request.urlopen(req)
 
             except Exception as exp:
                 input_channel.basic_reject(method_frame.delivery_tag, False)
                 logging.error("Other Error: " + exp)
 
-            urllib.request.Request(
+            req = urllib.request.Request(
                 urllib.parse.urljoin(
                     monitor_url,
                     "/v2/task/status/%s/%s" % (meta["job_id"], meta["task_id"])),
@@ -194,7 +197,10 @@ def bind(function: callable, name: str, version="1.0.0"):
                     "t": int(time.time()),
                     "p": name
                 }).encode(),
-                headers={"Content-Type": "application/json"})
+                headers={
+                    "Content-Type": "application/json"
+                })
+            resp = urllib.request.urlopen(req)
 
     except pika.exceptions.RecursionError as exp:
         input_channel.stop_consuming()
