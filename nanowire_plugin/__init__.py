@@ -172,8 +172,9 @@ def bind(function: callable, name: str, version="1.0.0"):
                 logging.error("Processing Error: " + exp.message, extra={**exp.meta, **exp.extra})
 
                 urllib.request.Request(
-                    join(monitor_url, "/v2/task/status/",
-                         exp.meta["job_id"], exp.meta["task_id"]),
+                    urllib.parse.urljoin(
+                        monitor_url,
+                        "/v2/task/status/%s/%s" % (exp.meta["job_id"], exp.meta["task_id"])),
                     data=dumps({
                         "t": int(time.time()),
                         "p": name,
@@ -186,8 +187,9 @@ def bind(function: callable, name: str, version="1.0.0"):
                 logging.error("Other Error: " + exp)
 
             urllib.request.Request(
-                join(monitor_url, "/v2/task/status/",
-                     meta["job_id"], meta["task_id"]),
+                urllib.parse.urljoin(
+                    monitor_url,
+                    "/v2/task/status/%s/%s" % (meta["job_id"], meta["task_id"])),
                 data=dumps({
                     "t": int(time.time()),
                     "p": name
