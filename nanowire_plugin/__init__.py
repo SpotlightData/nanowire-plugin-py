@@ -140,13 +140,19 @@ def bind(function: callable, name: str, version="1.0.0"):
 
     try:
         while True:
-            input_channel.queue_declare(name, False, True)
+            queue_state = input_channel.queue_declare(name, False, True, False, False)
+            if queue_state.method.message_count == 0:
+                time.sleep(3)
+                continue
+
             method_frame, header_frame, body = input_channel.basic_get(name)
             if (method_frame, header_frame, body) == (None, None, None):
+                time.sleep(3)
                 continue  # queue empty
 
             if body is None:
                 logging.error("body received was empty")
+                time.sleep(3)
                 continue  # body empty
 
             meta = {}
