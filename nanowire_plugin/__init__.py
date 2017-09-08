@@ -180,7 +180,7 @@ def bind(function: callable, name: str, version="1.0.0"):
                         "p": name,
                         "e": exp.message
                     }).encode(),
-                    headers={"Content-Type: application/json"})
+                    headers={"Content-Type": "application/json"})
 
             except Exception as exp:
                 input_channel.basic_reject(method_frame.delivery_tag, False)
@@ -194,7 +194,7 @@ def bind(function: callable, name: str, version="1.0.0"):
                     "t": int(time.time()),
                     "p": name
                 }).encode(),
-                headers={"Content-Type: application/json"})
+                headers={"Content-Type": "application/json"})
 
     except pika.exceptions.RecursionError as exp:
         input_channel.stop_consuming()
