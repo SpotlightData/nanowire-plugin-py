@@ -174,9 +174,10 @@ def bind(function: callable, name: str, version="1.0.0"):
                 req = urllib.request.Request(
                     urllib.parse.urljoin(
                         monitor_url,
-                        "/v2/task/status/%s/%s" % (exp.meta["job_id"], exp.meta["task_id"])),
+                        "/v3/task/status/%s/%s" % (exp.meta["job_id"], exp.meta["task_id"])),
                     data=dumps({
                         "t": int(time.time()),
+                        "id": exp.meta["task_id"],
                         "p": name,
                         "e": exp.message
                     }).encode(),
@@ -192,9 +193,10 @@ def bind(function: callable, name: str, version="1.0.0"):
             req = urllib.request.Request(
                 urllib.parse.urljoin(
                     monitor_url,
-                    "/v2/task/status/%s/%s" % (meta["job_id"], meta["task_id"])),
+                    "/v3/task/status/%s/%s" % (meta["job_id"], meta["task_id"])),
                 data=dumps({
                     "t": int(time.time()),
+                    "id": meta["task_id"],
                     "p": name
                 }).encode(),
                 headers={
