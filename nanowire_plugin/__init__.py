@@ -64,7 +64,7 @@ def bind(function: callable, name: str, version="1.0.0"):
     def send(chan, method, properties, body: str):
         """unwraps a message and calls the user function"""
 
-        logging.debug("consumed message", extra={
+        logging.info("consumed message", extra={
             "chan": chan,
             "method": method,
             "properties": properties})
@@ -75,7 +75,7 @@ def bind(function: callable, name: str, version="1.0.0"):
 
         next_plugin = get_next_plugin(name, payload["nmo"]["job"]["workflow"])
         if next_plugin is None:
-            logging.debug("this is the final plugin", extra={
+            logging.info("this is the final plugin", extra={
                 "job_id": payload["nmo"]["job"]["job_id"],
                 "task_id": payload["nmo"]["task"]["task_id"]})
 
@@ -114,7 +114,7 @@ def bind(function: callable, name: str, version="1.0.0"):
 
         payload["jsonld"] = result
 
-        logging.debug("finished running user code", extra={
+        logging.info("finished running user code", extra={
             "job_id": payload["nmo"]["job"]["job_id"],
             "task_id": payload["nmo"]["task"]["task_id"]})
 
@@ -136,7 +136,7 @@ def bind(function: callable, name: str, version="1.0.0"):
 
         return {"job_id": payload["nmo"]["job"]["job_id"], "task_id": payload["nmo"]["task"]["task_id"]}
 
-    logging.debug("consuming from", extra={"queue": name})
+    logging.info("consuming from", extra={"queue": name})
 
     try:
         while True:
