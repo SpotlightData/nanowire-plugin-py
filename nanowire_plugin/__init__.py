@@ -77,6 +77,10 @@ def bind(function: callable, name: str, version="1.0.0"):
         raw = body.decode("utf-8")
         payload = loads(raw)
         validate_payload(payload, name)
+        set_status(monitor_url,
+                   payload["nmo"]["job"]["job_id"],
+                   payload["nmo"]["task"]["task_id"],
+                   name + ".consumed", error)
 
         next_plugin = get_next_plugin(name, payload["nmo"]["job"]["workflow"])
         if next_plugin is None:
@@ -165,8 +169,6 @@ def bind(function: callable, name: str, version="1.0.0"):
 
             meta = {}
             error = ""
-
-            set_status(monitor_url, meta["job_id"], meta["task_id"], name + ".consumed", error)
 
             try:
                 meta = send(input_channel, method_frame, header_frame, body)
