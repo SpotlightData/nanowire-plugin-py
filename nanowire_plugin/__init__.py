@@ -42,7 +42,8 @@ def bind(function: callable, name: str, version="1.0.0"):
     parameters = pika.ConnectionParameters(
         host=environ["AMQP_HOST"],
         port=int(environ["AMQP_PORT"]),
-        credentials=pika.PlainCredentials(environ["AMQP_USER"], environ["AMQP_PASS"]))
+        credentials=pika.PlainCredentials(environ["AMQP_USER"], environ["AMQP_PASS"]),
+        heartbeat_interval=600)
 
     connection = pika.BlockingConnection(parameters)
     input_channel = connection.channel()
@@ -205,7 +206,6 @@ def bind(function: callable, name: str, version="1.0.0"):
             resp = urllib.request.urlopen(req)
 
     except pika.exceptions.RecursionError as exp:
-        input_channel.stop_consuming()
         connection.close()
         raise exp
 
