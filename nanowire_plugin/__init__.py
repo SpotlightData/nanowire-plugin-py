@@ -164,6 +164,9 @@ def bind(function: callable, name: str, version="1.0.0"):
                 continue  # body empty
 
             meta = {}
+            error = ""
+
+            set_status(monitor_url, meta["job_id"], meta["task_id"], name + ".consumed", error)
 
             try:
                 meta = send(input_channel, method_frame, header_frame, body)
@@ -172,38 +175,14 @@ def bind(function: callable, name: str, version="1.0.0"):
                 input_channel.basic_reject(method_frame.delivery_tag, False)
                 logging.error("Processing Error: " + exp.message, extra={**exp.meta, **exp.extra})
 
-                req = urllib.request.Request(
-                    urllib.parse.urljoin(
-                        monitor_url,
-                        "/v3/task/status/%s/%s" % (exp.meta["job_id"], exp.meta["task_id"])),
-                    data=dumps({
-                        "t": int(time.time()),
-                        "id": exp.meta["task_id"],
-                        "p": name,
-                        "e": exp.message
-                    }).encode(),
-                    headers={
-                        "Content-Type": "application/json"
-                    })
-                resp = urllib.request.urlopen(req)
+                error = exp.message
 
             except Exception as exp:
                 input_channel.basic_reject(method_frame.delivery_tag, False)
                 logging.error("Other Error: " + exp)
 
-            req = urllib.request.Request(
-                urllib.parse.urljoin(
-                    monitor_url,
-                    "/v3/task/status/%s/%s" % (meta["job_id"], meta["task_id"])),
-                data=dumps({
-                    "t": int(time.time()),
-                    "id": meta["task_id"],
-                    "p": name
-                }).encode(),
-                headers={
-                    "Content-Type": "application/json"
-                })
-            resp = urllib.request.urlopen(req)
+            finally:
+                set_status(monitor_url, meta["job_id"], meta["task_id"], name + ".done", error)
 
     except pika.exceptions.RecursionError as exp:
         connection.close()
@@ -248,3 +227,21 @@ def get_next_plugin(this_plugin: str, workflow: list) -> str:
             return workpipe["config"]["name"]
 
     return None
+
+
+def set_status(monitor_url: str, job_id: str, task_id: str, name: str, error: str):
+    """sends a POST request to the monitor to notify it of task position"""
+    req = urllib.request.Request(
+        urllib.parse.urljoin(
+            monitor_url,
+            "/v3/task/status/%s/%s" % (job_id, task_id)),
+        data=dumps({
+            "t": int(time.time()),
+            "id": task_id,
+            "p": name,
+            "e": error
+        }).encode(),
+        headers={
+            "Content-Type": "application/json"
+        })
+    urllib.request.urlopen(req)
