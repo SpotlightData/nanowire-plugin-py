@@ -55,7 +55,7 @@ def bind(function: callable, name: str, version="1.0.0"):
 
     monitor_url = environ["MONITOR_URL"]
 
-    logger.info("initialised sld lib", extra={
+    logger.info("initialised nanowire lib", extra={
         "monitor_url": monitor_url,
         "minio": environ["MINIO_HOST"],
         "rabbit": environ["AMQP_HOST"]
