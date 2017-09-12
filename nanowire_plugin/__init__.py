@@ -182,7 +182,7 @@ def bind(function: callable, name: str, version="1.0.0"):
 
             except Exception as exp:
                 input_channel.basic_reject(method_frame.delivery_tag, False)
-                logging.error("Other Error: " + exp)
+                logging.error("Other Error: " + repr(exp))
 
             finally:
                 if "job_id"in meta and "task_id" in meta:
