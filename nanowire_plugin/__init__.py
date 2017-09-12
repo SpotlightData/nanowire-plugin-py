@@ -11,15 +11,8 @@ import urllib
 import time
 
 import pika
-from pythonjsonlogger import jsonlogger
 from minio import Minio
 from minio.error import AccessDenied
-
-
-LOG = logging.getLogger()
-HND = logging.StreamHandler()
-HND.setFormatter(jsonlogger.JsonFormatter())
-LOG.addHandler(HND)
 
 
 class ProcessingError(Exception):
@@ -38,6 +31,8 @@ class ProcessingError(Exception):
 
 def bind(function: callable, name: str, version="1.0.0"):
     """binds a function to the input message queue"""
+
+    logger = logging.getLogger("nanowire-plugin")
 
     parameters = pika.ConnectionParameters(
         host=environ["AMQP_HOST"],
@@ -60,7 +55,7 @@ def bind(function: callable, name: str, version="1.0.0"):
 
     monitor_url = environ["MONITOR_URL"]
 
-    logging.info("initialised sld lib", extra={
+    logger.info("initialised sld lib", extra={
         "monitor_url": monitor_url,
         "minio": environ["MINIO_HOST"],
         "rabbit": environ["AMQP_HOST"]
@@ -69,7 +64,7 @@ def bind(function: callable, name: str, version="1.0.0"):
     def send(chan, method, properties, body: str):
         """unwraps a message and calls the user function"""
 
-        logging.info("consumed message", extra={
+        logger.info("consumed message", extra={
             "chan": chan,
             "method": method,
             "properties": properties})
@@ -84,7 +79,7 @@ def bind(function: callable, name: str, version="1.0.0"):
 
         next_plugin = get_next_plugin(name, payload["nmo"]["job"]["workflow"])
         if next_plugin is None:
-            logging.info("this is the final plugin", extra={
+            logger.info("this is the final plugin", extra={
                 "job_id": payload["nmo"]["job"]["job_id"],
                 "task_id": payload["nmo"]["task"]["task_id"]})
 
@@ -109,11 +104,11 @@ def bind(function: callable, name: str, version="1.0.0"):
         # if there are issues, just use the input and carry on the pipeline
 
         if result is None:
-            logging.error("return value is None")
+            logger.error("return value is None")
             result = payload["jsonld"]
 
         if not isinstance(result, dict):
-            logging.error("return value must be of type dict, not %s", type(result))
+            logger.error("return value must be of type dict, not %s", type(result))
             result = payload["jsonld"]
 
         if "jsonld" in result:
@@ -123,7 +118,7 @@ def bind(function: callable, name: str, version="1.0.0"):
 
         payload["jsonld"] = result
 
-        logging.info("finished running user code", extra={
+        logger.info("finished running user code", extra={
             "job_id": payload["nmo"]["job"]["job_id"],
             "task_id": payload["nmo"]["task"]["task_id"]})
 
@@ -148,7 +143,7 @@ def bind(function: callable, name: str, version="1.0.0"):
             "task_id": payload["nmo"]["task"]["task_id"]
         }
 
-    logging.info("consuming from", extra={"queue": name})
+    logger.info("consuming from", extra={"queue": name})
 
     try:
         while True:
@@ -163,11 +158,11 @@ def bind(function: callable, name: str, version="1.0.0"):
                 continue  # queue empty
 
             if body is None:
-                logging.error("body received was empty")
+                logger.error("body received was empty")
                 time.sleep(3)
                 continue  # body empty
 
-            meta = {}
+            meta = {"job_id": None, "task_id": None}
             error = ""
 
             try:
@@ -175,17 +170,18 @@ def bind(function: callable, name: str, version="1.0.0"):
 
             except ProcessingError as exp:
                 input_channel.basic_reject(method_frame.delivery_tag, False)
-                logging.error("Processing Error: " + exp.message, extra={**exp.meta, **exp.extra})
+                logger.error("Processing Error: " + exp.message, extra={**exp.meta, **exp.extra})
 
                 error = exp.message
                 meta = exp.meta
 
             except Exception as exp:
                 input_channel.basic_reject(method_frame.delivery_tag, False)
-                logging.error("Other Error: " + repr(exp))
+                logger.error("Other Error: " + repr(exp))
 
             finally:
-                if "job_id"in meta and "task_id" in meta:
+                if meta["job_id"] is not None and meta["task_id"] is not None:
+                    logger.error(repr(meta))
                     set_status(monitor_url, meta["job_id"], meta["task_id"], name + ".done", error)
 
     except pika.exceptions.RecursionError as exp:
