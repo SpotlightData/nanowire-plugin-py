@@ -170,18 +170,18 @@ def bind(function: callable, name: str, version="1.0.0"):
 
             except ProcessingError as exp:
                 input_channel.basic_reject(method_frame.delivery_tag, False)
-                logger.error("Processing Error: " + exp.message, extra={**exp.meta, **exp.extra})
+                logger.exception("Processing Error: " + exp.message,
+                                 extra={**exp.meta, **exp.extra})
 
                 error = exp.message
                 meta = exp.meta
 
             except Exception as exp:
                 input_channel.basic_reject(method_frame.delivery_tag, False)
-                logger.error("Other Error: " + repr(exp))
+                logger.exception(exp)
 
             finally:
                 if meta["job_id"] is not None and meta["task_id"] is not None:
-                    logger.error(repr(meta))
                     set_status(monitor_url, meta["job_id"], meta["task_id"], name + ".done", error)
 
     except pika.exceptions.RecursionError as exp:
