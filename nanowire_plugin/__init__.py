@@ -178,13 +178,15 @@ def bind(function: callable, name: str, version="1.0.0"):
                 logging.error("Processing Error: " + exp.message, extra={**exp.meta, **exp.extra})
 
                 error = exp.message
+                meta = exp.meta
 
             except Exception as exp:
                 input_channel.basic_reject(method_frame.delivery_tag, False)
                 logging.error("Other Error: " + exp)
 
             finally:
-                set_status(monitor_url, meta["job_id"], meta["task_id"], name + ".done", error)
+                if "job_id"in meta and "task_id" in meta:
+                    set_status(monitor_url, meta["job_id"], meta["task_id"], name + ".done", error)
 
     except pika.exceptions.RecursionError as exp:
         connection.close()
