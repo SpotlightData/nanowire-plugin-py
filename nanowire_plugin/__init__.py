@@ -33,6 +33,7 @@ def bind(function: callable, name: str, version="1.0.0"):
     """binds a function to the input message queue"""
 
     logger = logging.getLogger("nanowire-plugin")
+    logger.info("initialising nanowire lib")
 
     parameters = pika.ConnectionParameters(
         host=environ["AMQP_HOST"],
@@ -55,6 +56,7 @@ def bind(function: callable, name: str, version="1.0.0"):
 
     monitor_url = environ["MONITOR_URL"]
 
+    logger.setLevel(logging.DEBUG)
     logger.info("initialised nanowire lib", extra={
         "monitor_url": monitor_url,
         "minio": environ["MINIO_HOST"],
@@ -85,6 +87,14 @@ def bind(function: callable, name: str, version="1.0.0"):
         raw = body.decode("utf-8")
         payload = loads(raw)
         validate_payload(payload, name)
+
+        this = get_this_plugin(name, payload["nmo"]["job"]["workflow"])
+        if this == -1:
+            raise ProcessingError(
+                "declared plugin name does not match workflow",
+                job_id=payload["nmo"]["job"]["job_id"],
+                task_id=payload["nmo"]["task"]["task_id"])
+        logger.info(this)
 
         try:
             set_status(monitor_url,
@@ -119,8 +129,10 @@ def bind(function: callable, name: str, version="1.0.0"):
 
         # calls the user function to mutate the JSON-LD data
 
-        if "env" in payload["nmo"]["job"]:
-            for ename, evalue in payload["nmo"]["job"]["env"]:
+        logger.info("this pl: " + str(this))
+        if "env" in payload["nmo"]["job"]["workflow"][this]:
+            for ename, evalue in payload["nmo"]["job"]["workflow"][this]["env"]:
+                logger.info(ename + "  " + str(evalue))
                 if ename in sys_env:
                     logger.error("attempt to set plugin env var", extra={
                         "name": ename,
@@ -239,19 +251,13 @@ def validate_payload(payload: dict, name: str) -> bool:
     if "task" not in payload["nmo"]:
         raise ProcessingError("no task in nmo")
 
-    if not ensure_this_plugin(name, payload["nmo"]["job"]["workflow"]):
-        raise ProcessingError(
-            "declared plugin name does not match workflow",
-            job_id=payload["nmo"]["job"]["job_id"],
-            task_id=payload["nmo"]["task"]["task_id"])
 
-
-def ensure_this_plugin(this_plugin: str, workflow: list)->bool:
+def get_this_plugin(this_plugin: str, workflow: list)->int:
     """ensures the current plugin is present in the workflow"""
-    for workpipe in workflow:
+    for workpipe, i in workflow:
         if workpipe["config"]["name"] == this_plugin:
-            return True
-    return False
+            return i
+    return -1
 
 
 def get_next_plugin(this_plugin: str, workflow: list) -> str:
