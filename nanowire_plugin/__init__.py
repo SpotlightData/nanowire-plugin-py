@@ -61,6 +61,19 @@ def bind(function: callable, name: str, version="1.0.0"):
         "rabbit": environ["AMQP_HOST"]
     })
 
+    sys_env = [
+        "AMQP_HOST",
+        "AMQP_PORT",
+        "AMQP_USER",
+        "AMQP_PASS",
+        "MINIO_HOST",
+        "MINIO_PORT",
+        "MINIO_ACCESS",
+        "MINIO_SECRET",
+        "MINIO_SCHEME",
+        "MONITOR_URL"
+    ]
+
     def send(chan, method, properties, body: str):
         """unwraps a message and calls the user function"""
 
@@ -105,6 +118,16 @@ def bind(function: callable, name: str, version="1.0.0"):
         url = minio_client.presigned_get_object(payload["nmo"]["job"]["job_id"], path)
 
         # calls the user function to mutate the JSON-LD data
+
+        if "env" in payload["nmo"]["job"]:
+            for ename, evalue in payload["nmo"]["job"]["env"]:
+                if ename in sys_env:
+                    logger.error("attempt to set plugin env var", extra={
+                        "name": ename,
+                        "attempted_value": evalue})
+                    continue
+
+                environ[ename] = evalue
 
         result = function(payload["nmo"], payload["jsonld"], url)
 
