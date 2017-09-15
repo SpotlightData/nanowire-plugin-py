@@ -72,10 +72,17 @@ def bind(function: callable, name: str, version="1.0.0"):
         raw = body.decode("utf-8")
         payload = loads(raw)
         validate_payload(payload, name)
-        set_status(monitor_url,
-                   payload["nmo"]["job"]["job_id"],
-                   payload["nmo"]["task"]["task_id"],
-                   name + ".consumed", error)
+
+        try:
+            set_status(monitor_url,
+                       payload["nmo"]["job"]["job_id"],
+                       payload["nmo"]["task"]["task_id"],
+                       name + ".consumed", error)
+        except Exception as exp:
+            logger.warning("failed to set status", extra={
+                "exception": str(exp),
+                "job_id": payload["nmo"]["job"]["job_id"],
+                "task_id": payload["nmo"]["task"]["task_id"]})
 
         next_plugin = get_next_plugin(name, payload["nmo"]["job"]["workflow"])
         if next_plugin is None:
@@ -182,7 +189,15 @@ def bind(function: callable, name: str, version="1.0.0"):
 
             finally:
                 if meta["job_id"] is not None and meta["task_id"] is not None:
-                    set_status(monitor_url, meta["job_id"], meta["task_id"], name + ".done", error)
+                    try:
+                        set_status(monitor_url, meta["job_id"],
+                                   meta["task_id"], name + ".done", error)
+                    except Exception as exp:
+                        logger.warning("failed to set status", extra={
+                            "exception": str(exp),
+                            "job_id": meta["job_id"],
+                            "task_id": meta["task_id"],
+                            "error": error})
 
     except pika.exceptions.RecursionError as exp:
         connection.close()

@@ -5,6 +5,7 @@ install:
 	sudo ./setup.py install
 
 upload:
+	mc mb local/j-00000000-0000-0000-0000-000000000000
 	mc cp tester/testfile.txt local/j-00000000-0000-0000-0000-000000000000/t-00000000-0000-0000-0000-000000000000/input/source/testfile.txt
 
 test: install
