@@ -254,7 +254,7 @@ def validate_payload(payload: dict, name: str) -> bool:
 
 def get_this_plugin(this_plugin: str, workflow: list)->int:
     """ensures the current plugin is present in the workflow"""
-    for workpipe, i in workflow:
+    for i, workpipe in enumerate(workflow):
         if workpipe["config"]["name"] == this_plugin:
             return i
     return -1
