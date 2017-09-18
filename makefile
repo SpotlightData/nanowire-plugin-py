@@ -19,6 +19,7 @@ test: install
 	MINIO_SECRET="12345678" \
 	MINIO_SCHEME="http" \
 	MONITOR_URL="http://localhost:7380" \
+	TESTING_MODE=1 \
 	./tester/__init__.py
 
 release:

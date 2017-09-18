@@ -275,16 +275,22 @@ def get_next_plugin(this_plugin: str, workflow: list) -> str:
 
 def set_status(monitor_url: str, job_id: str, task_id: str, name: str, error: str):
     """sends a POST request to the monitor to notify it of task position"""
+    data = dumps({
+        "t": int(time.time() * 1000),
+        "id": task_id,
+        "p": name,
+        "e": error
+    }).encode()
+
+    if "TESTING_MODE" in environ:
+        logging.info(data)
+        return
+
     req = urllib.request.Request(
         urllib.parse.urljoin(
             monitor_url,
             "/v3/task/status/%s/%s" % (job_id, task_id)),
-        data=dumps({
-            "t": int(time.time() * 1000),
-            "id": task_id,
-            "p": name,
-            "e": error
-        }).encode(),
+        data=data,
         headers={
             "Content-Type": "application/json"
         })
