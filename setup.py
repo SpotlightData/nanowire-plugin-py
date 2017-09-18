@@ -14,5 +14,6 @@ setup(
     url="https://github.com/SpotlightData/nanowire-plugin-py",
     author='Barnaby "Southclaws" Keene',
     author_email='southclaws@gmail.com',
-    license='MIT'
+    license='MIT',
+    include_package_data=True
 )
