@@ -11,7 +11,7 @@ LOG = logging.getLogger()
 HND = logging.StreamHandler()
 HND.setFormatter(jsonlogger.JsonFormatter())
 LOG.addHandler(HND)
-LOG.setLevel(logging.DEBUG)
+LOG.setLevel(logging.INFO)
 
 
 def entry(nmo: dict, jsonld: dict, source: str) -> dict:
