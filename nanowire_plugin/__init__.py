@@ -280,7 +280,7 @@ def set_status(monitor_url: str, job_id: str, task_id: str, name: str, error: st
             monitor_url,
             "/v3/task/status/%s/%s" % (job_id, task_id)),
         data=dumps({
-            "t": int(time.time() * 1000 * 1000),
+            "t": int(time.time() * 1000),
             "id": task_id,
             "p": name,
             "e": error
