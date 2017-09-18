@@ -11,11 +11,11 @@ LOG = logging.getLogger()
 HND = logging.StreamHandler()
 HND.setFormatter(jsonlogger.JsonFormatter())
 LOG.addHandler(HND)
-# LOG.setLevel(logging.INFO)
+LOG.setLevel(logging.DEBUG)
 
 
 def entry(nmo: dict, jsonld: dict, source: str) -> dict:
-    LOG.info(nmo["job"]["job_id"], nmo["task"]["task_id"], jsonld)
+    LOG.info("%s:%s:%s", nmo["job"]["job_id"], nmo["task"]["task_id"], str(jsonld))
     return {"@type": "TextDigitalDocument"}
 
 bind(entry, "extract")

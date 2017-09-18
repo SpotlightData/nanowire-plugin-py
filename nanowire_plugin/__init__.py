@@ -131,7 +131,7 @@ def bind(function: callable, name: str, version="1.0.0"):
 
         logger.info("this pl: " + str(this))
         if "env" in payload["nmo"]["job"]["workflow"][this]:
-            for ename, evalue in payload["nmo"]["job"]["workflow"][this]["env"]:
+            for ename, evalue in payload["nmo"]["job"]["workflow"][this]["env"].items():
                 logger.info(ename + "  " + str(evalue))
                 if ename in sys_env:
                     logger.error("attempt to set plugin env var", extra={
