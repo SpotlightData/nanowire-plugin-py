@@ -15,5 +15,8 @@ setup(
     author='Barnaby "Southclaws" Keene',
     author_email='southclaws@gmail.com',
     license='MIT',
-    include_package_data=True
+    include_package_data=True,
+    data_files=[
+        ('.', ['VERSION'])
+    ]
 )
