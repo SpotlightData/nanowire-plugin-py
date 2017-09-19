@@ -15,7 +15,7 @@ LOG.setLevel(logging.INFO)
 
 
 def entry(nmo: dict, jsonld: dict, source: str) -> dict:
-    LOG.info("%s:%s:%s", nmo["job"]["job_id"], nmo["task"]["task_id"], str(jsonld))
+    LOG.info("PLUGIN: %s:%s:%s", nmo["job"]["job_id"], nmo["task"]["task_id"], str(jsonld))
     return {"@type": "TextDigitalDocument"}
 
 bind(entry, "extract")

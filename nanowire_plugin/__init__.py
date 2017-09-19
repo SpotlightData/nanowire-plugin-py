@@ -76,17 +76,8 @@ def bind(function: callable, name: str, version="1.0.0"):
         "MONITOR_URL"
     ]
 
-    def send(chan, method, properties, body: str):
+    def send(method, payload: dict):
         """unwraps a message and calls the user function"""
-
-        logger.info("consumed message", extra={
-            "chan": chan,
-            "method": method,
-            "properties": properties})
-
-        raw = body.decode("utf-8")
-        payload = loads(raw)
-        validate_payload(payload, name)
 
         this = get_this_plugin(name, payload["nmo"]["job"]["workflow"])
         if this == -1:
@@ -94,7 +85,6 @@ def bind(function: callable, name: str, version="1.0.0"):
                 "declared plugin name does not match workflow",
                 job_id=payload["nmo"]["job"]["job_id"],
                 task_id=payload["nmo"]["task"]["task_id"])
-        logger.info(this)
 
         try:
             set_status(monitor_url,
@@ -129,11 +119,9 @@ def bind(function: callable, name: str, version="1.0.0"):
 
         # calls the user function to mutate the JSON-LD data
 
-        logger.info("this pl: " + str(this))
         if "env" in payload["nmo"]["job"]["workflow"][this]:
             if isinstance(payload["nmo"]["job"]["workflow"][this]["env"], dict):
                 for ename, evalue in payload["nmo"]["job"]["workflow"][this]["env"].items():
-                    logger.info(ename + "  " + str(evalue))
                     if ename in sys_env:
                         logger.error("attempt to set plugin env var", extra={
                             "name": ename,
@@ -209,7 +197,19 @@ def bind(function: callable, name: str, version="1.0.0"):
             error = ""
 
             try:
-                meta = send(input_channel, method_frame, header_frame, body)
+                raw = body.decode("utf-8")
+                payload = loads(raw)
+                validate_payload(payload)
+            except Exception as exp:
+                logger.exception(exp)
+                continue
+
+            logger.info("consumed message", extra={
+                "job_id": meta["job_id"],
+                "task_id": meta["task_id"]})
+
+            try:
+                send(method_frame, payload)
 
             except ProcessingError as exp:
                 input_channel.basic_reject(method_frame.delivery_tag, False)
@@ -240,7 +240,7 @@ def bind(function: callable, name: str, version="1.0.0"):
         raise exp
 
 
-def validate_payload(payload: dict, name: str) -> bool:
+def validate_payload(payload: dict) -> bool:
     """ensures payload includes the required metadata and this plugin is in there"""
 
     if "nmo" not in payload:
