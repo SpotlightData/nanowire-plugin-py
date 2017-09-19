@@ -193,7 +193,6 @@ def bind(function: callable, name: str, version="1.0.0"):
                 time.sleep(3)
                 continue  # body empty
 
-            meta = {"job_id": None, "task_id": None}
             error = ""
 
             try:
@@ -203,6 +202,11 @@ def bind(function: callable, name: str, version="1.0.0"):
             except Exception as exp:
                 logger.exception(exp)
                 continue
+
+            meta = {
+                "job_id": payload["nmo"]["job"]["job_id"],
+                "task_id": payload["nmo"]["task"]["task_id"]
+            }
 
             logger.info("consumed message", extra={
                 "job_id": meta["job_id"],
