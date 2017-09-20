@@ -11,75 +11,29 @@
             "priority": 500,
             "workflow": [
                 {
-                    "id": "worker-extract-47a6",
-                    "parents": [
-                        "input"
-                    ],
-                    "children": [
-                        "worker-spacy-b31e"
-                    ],
                     "config": {
                         "name": "extract",
-                        "author": "Barnaby Keene",
-                        "email": "barnaby@spotlightdata.co.uk",
                         "image": "nanowire/worker_extract:2.7.5",
                         "cmd": [
                             "/main"
                         ],
-                        "inputs": [
-                            "source",
-                            "nmo"
-                        ],
-                        "outputs": [
-                            "plugin",
-                            "text"
-                        ],
-                        "cpu": "10m",
-                        "memory": "50M",
-                        "lines_formatted_support": true,
                         "env": {
                             "DEBUG": "0"
                         }
                     },
                     "env": {
-                        "DEBUG": "1"
-                    },
-                    "lines_formatted": false
+                        "TEST_VAR": "hello"
+                    }
                 },
                 {
-                    "id": "worker-spacy-b31e",
-                    "parents": [
-                        "worker-extract-47a6"
-                    ],
-                    "children": [],
                     "config": {
                         "name": "spacy",
-                        "author": "Barnaby Keene",
-                        "email": "barnaby@spotlightdata.co.uk",
                         "image": "nanowire/worker_spacy:1.0.0",
                         "cmd": [
                             "python3",
                             "main.py"
-                        ],
-                        "inputs": [
-                            "text"
-                        ],
-                        "outputs": [
-                            "plugin"
-                        ],
-                        "cpu": "10m",
-                        "memory": "50M",
-                        "lines_formatted_support": true,
-                        "env": {
-                            "DEBUG": "0",
-                            "SPAAS_HOST": "http://spacy.spotlightdata.co.uk"
-                        }
-                    },
-                    "env": {
-                        "DEBUG": "1",
-                        "SPAAS_HOST": "spacy.default"
-                    },
-                    "lines_formatted": false
+                        ]
+                    }
                 }
             ]
         },
