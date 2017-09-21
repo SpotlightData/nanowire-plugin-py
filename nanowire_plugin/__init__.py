@@ -23,20 +23,6 @@ if "DEBUG" in environ:
     logger.setLevel(logging.DEBUG)
 
 
-class ProcessingError(Exception):
-    """Exception raised for errors during processing.
-
-    Attributes:
-        message -- explanation of the error
-    """
-
-    def __init__(self, message: str, job_id: str=None, task_id: str=None, extra: dict=None):
-        super(ProcessingError, self).__init__(message)
-        self.message = message
-        self.extra = extra or {}
-        self.meta = {"job_id": job_id, "task_id": task_id}
-
-
 def bind(function: callable, name: str, version="1.0.0"):
     """binds a function to the input message queue"""
 
@@ -87,10 +73,7 @@ def bind(function: callable, name: str, version="1.0.0"):
 
         this = get_this_plugin(name, payload["nmo"]["job"]["workflow"])
         if this == -1:
-            raise ProcessingError(
-                "declared plugin name does not match workflow",
-                job_id=payload["nmo"]["job"]["job_id"],
-                task_id=payload["nmo"]["task"]["task_id"])
+            raise Exception("declared plugin name does not match workflow")
 
         try:
             set_status(monitor_url,
@@ -116,10 +99,7 @@ def bind(function: callable, name: str, version="1.0.0"):
             payload["nmo"]["source"]["name"])
 
         if not minio_client.bucket_exists(payload["nmo"]["job"]["job_id"]):
-            raise ProcessingError(
-                "job_id does not have a bucket",
-                job_id=payload["nmo"]["job"]["job_id"],
-                task_id=payload["nmo"]["task"]["task_id"])
+            raise Exception("job_id does not have a bucket")
 
         url = minio_client.presigned_get_object(payload["nmo"]["job"]["job_id"], path)
 
@@ -206,7 +186,7 @@ def bind(function: callable, name: str, version="1.0.0"):
                 payload = loads(raw)
                 validate_payload(payload)
             except Exception as exp:
-                logger.exception(exp)
+                logger.error(str(exp))
                 continue
 
             meta = {
@@ -221,17 +201,12 @@ def bind(function: callable, name: str, version="1.0.0"):
             try:
                 send(method_frame, payload)
 
-            except ProcessingError as procerr:
-                input_channel.basic_reject(method_frame.delivery_tag, False)
-                logger.exception("Processing Error: " + procerr.message,
-                                 extra={**procerr.meta, **procerr.extra})
-
-                error = procerr.message
-                meta = procerr.meta
-
             except Exception as exp:
                 input_channel.basic_reject(method_frame.delivery_tag, False)
-                logger.exception(exp)
+                error = str(exp)
+                logger.error(str(exp), extra={
+                    "job_id": meta["job_id"],
+                    "task_id": meta["task_id"]})
 
             finally:
                 if meta["job_id"] is not None and meta["task_id"] is not None:
@@ -254,13 +229,13 @@ def validate_payload(payload: dict) -> bool:
     """ensures payload includes the required metadata and this plugin is in there"""
 
     if "nmo" not in payload:
-        raise ProcessingError("no job in nmo")
+        raise KeyError("no job in nmo")
 
     if "job" not in payload["nmo"]:
-        raise ProcessingError("no job in nmo")
+        raise KeyError("no job in nmo")
 
     if "task" not in payload["nmo"]:
-        raise ProcessingError("no task in nmo")
+        raise KeyError("no task in nmo")
 
 
 def get_this_plugin(this_plugin: str, workflow: list)->int:
