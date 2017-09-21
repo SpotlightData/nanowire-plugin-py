@@ -129,10 +129,12 @@ def bind(function: callable, name: str, version="1.0.0"):
             logger.error("return value must be of type dict, not %s", type(result))
             result = payload["jsonld"]
 
-        if "jsonld" in result:
+        if result is None:
+            result = payload["jsonld"]
+        elif "jsonld" in result:
             result = result["jsonld"]
         else:
-            result = result
+            result = payload["jsonld"]
 
         payload["jsonld"] = result
 
