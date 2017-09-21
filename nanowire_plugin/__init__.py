@@ -204,8 +204,10 @@ def bind(function: callable, name: str, version="1.0.0"):
 
             except Exception as exp:
                 input_channel.basic_reject(method_frame.delivery_tag, False)
-                error = [s[2:]
-                         for s in traceback.format_exc().splitlines() if s.startswith("  File")][-1]
+                error = str(exp) + ": " + [
+                    s[2:]
+                    for s in traceback.format_exc().splitlines() if s.startswith("  File")
+                ][-1]
                 logger.error(error, extra={
                     "job_id": meta["job_id"],
                     "task_id": meta["task_id"]})
