@@ -15,6 +15,14 @@ from minio import Minio
 from minio.error import AccessDenied
 
 
+# logger for this module only
+# a global var because this codebase is not worth putting into a class
+logger = logging.getLogger("nanowire-plugin")
+
+if "DEBUG" in environ:
+    logger.setLevel(logging.DEBUG)
+
+
 class ProcessingError(Exception):
     """Exception raised for errors during processing.
 
@@ -32,7 +40,6 @@ class ProcessingError(Exception):
 def bind(function: callable, name: str, version="1.0.0"):
     """binds a function to the input message queue"""
 
-    logger = logging.getLogger("nanowire-plugin")
     logger.info("initialising nanowire lib")
 
     parameters = pika.ConnectionParameters(
@@ -56,7 +63,6 @@ def bind(function: callable, name: str, version="1.0.0"):
 
     monitor_url = environ["MONITOR_URL"]
 
-    logger.setLevel(logging.DEBUG)
     logger.info("initialised nanowire lib", extra={
         "monitor_url": monitor_url,
         "minio": environ["MINIO_HOST"],
@@ -215,13 +221,13 @@ def bind(function: callable, name: str, version="1.0.0"):
             try:
                 send(method_frame, payload)
 
-            except ProcessingError as exp:
+            except ProcessingError as procerr:
                 input_channel.basic_reject(method_frame.delivery_tag, False)
-                logger.exception("Processing Error: " + exp.message,
-                                 extra={**exp.meta, **exp.extra})
+                logger.exception("Processing Error: " + procerr.message,
+                                 extra={**procerr.meta, **procerr.extra})
 
-                error = exp.message
-                meta = exp.meta
+                error = procerr.message
+                meta = procerr.meta
 
             except Exception as exp:
                 input_channel.basic_reject(method_frame.delivery_tag, False)
@@ -280,6 +286,8 @@ def get_next_plugin(this_plugin: str, workflow: list) -> str:
 
 def set_status(monitor_url: str, job_id: str, task_id: str, name: str, error: str):
     """sends a POST request to the monitor to notify it of task position"""
+
+    logger.info("posting status update", extra={"job_id": job_id, "task_id": task_id})
     data = dumps({
         "t": int(time.time() * 1000),
         "id": task_id,
@@ -288,7 +296,7 @@ def set_status(monitor_url: str, job_id: str, task_id: str, name: str, error: st
     }).encode()
 
     if "TESTING_MODE" in environ:
-        logging.info(data)
+        logger.info(data)
         return
 
     req = urllib.request.Request(
