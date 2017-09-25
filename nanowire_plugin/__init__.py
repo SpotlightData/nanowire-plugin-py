@@ -133,8 +133,6 @@ def bind(function: callable, name: str, version="1.0.0"):
             result = payload["jsonld"]
         elif "jsonld" in result:
             result = result["jsonld"]
-        else:
-            result = payload["jsonld"]
 
         payload["jsonld"] = result
 
