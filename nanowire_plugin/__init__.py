@@ -339,7 +339,7 @@ def send(name, payload, input_channel, output_channel, method, properties, minio
         
         
     #check to see that result is not an empty field. If result is None everything
-    #goes to shit
+    #goes wrong
     if result != None:
         #if the result has jsonld as its top level then make it not so i.e
         #result = {"jsonld": {blah blah blah in jsonld format}} becomes=>
