@@ -85,6 +85,8 @@ class on_request_class():
 
 def bind(function, name, version="1.0.0"):
     """binds a function to the input message queue"""
+    
+    #setup logger
     logger.setLevel(logging.DEBUG)
 
     #set up the logging
@@ -154,12 +156,9 @@ def bind(function, name, version="1.0.0"):
     input_channel.basic_consume(requester.on_request, queue=name, no_ack=False)
     
     #print("Created basic consumer")
-    logger.info("Created basic consumer, info log")
+    logger.info("Created basic consumer")
     
         
-    
-    logger.info("About to start consuming")
-    
     input_channel.start_consuming()
     
     
@@ -259,8 +258,9 @@ def send(name, payload, input_channel, output_channel, method, properties, minio
             "declared plugin name does not match workflow",
             job_id=payload["nmo"]["job"]["job_id"],
             task_id=payload["nmo"]["task"]["task_id"])
-    logger.info(plugin_no)
+    logger.info("Plugin number %s in pipeline"%plugin_no)
 
+    #I'm not 100% sure what this is doing
     try:
         set_status(monitor_url,
                    payload["nmo"]["job"]["job_id"],
@@ -317,10 +317,10 @@ def send(name, payload, input_channel, output_channel, method, properties, minio
     result = function(payload["nmo"], payload["jsonld"], url)
 
 
-    logger.info("result is:- ")
-    logger.info(result)
-    logger.info('')
-    logger.info('')
+    #logger.info("result is:- ")
+    #logger.info(result)
+    #logger.info('')
+    #logger.info('')
 
     
     # if there are issues, just use the input and carry on the pipeline
