@@ -4,41 +4,115 @@ Provides a `bind` function to plugins so they can simply bind a function to a qu
 """
 
 import logging
-from json import loads, dumps, decoder
+import json
 from os import environ
 from os.path import join
 import urllib
 import time
-import traceback
 
 import pika
 from minio import Minio
 from minio.error import AccessDenied
 
 
-# logger for this module only
-# a global var because this codebase is not worth putting into a class
+#set up the logger globally
 logger = logging.getLogger("nanowire-plugin")
 
-if "DEBUG" in environ:
+
+
+class ProcessingError(Exception):
+    """Exception raised for errors during processing.
+
+    Attributes:
+        message -- explanation of the error
+    """
+
+    def __init__(self, message: str, job_id: str=None, task_id: str=None, extra: dict=None):
+        super(ProcessingError, self).__init__(message)
+        self.message = message
+        self.extra = extra or {}
+        self.meta = {"job_id": job_id, "task_id": task_id}
+
+
+
+#create a class so we can feed things into the on_request function
+class on_request_class():
+    
+    def __init__(self, function, name, minio_client, output_channel, monitor_url):
+        
+        self.name = name
+        self.function = function
+        self.minio_client = minio_client
+        self.monitor_url = monitor_url
+        self.output_channel = output_channel
+        
+
+    def on_request(self, ch, method, props, body):
+        
+        #set up logging inside the server functions
+        logger.setLevel(logging.DEBUG)
+     
+        data = body.decode("utf-8")
+
+
+        
+        if data == None:
+            
+            logger.info("Empty input")
+            #print("Empty input")
+            
+        else:
+            logger.info(data)
+            payload = json.loads(data)
+            
+            validate_payload(payload, self.name)
+            
+            logger.info("Payload is:- ")
+            logger.info(payload)
+
+        
+
+
+        send(self.name, payload, ch, self.output_channel, method, props, self.minio_client, self.monitor_url, self.function)
+        
+        #ch.basic_publish(exchange='',
+        #                 routing_key=self.name,
+        #                 properties=pika.BasicProperties(correlation_id=props.correlation_id), body=str(response))
+                                                         
+                                                     
+    
+
+
+def bind(function, name, version="1.0.0"):
+    """binds a function to the input message queue"""
     logger.setLevel(logging.DEBUG)
 
+    #set up the logging
+    #logger = logging.getLogger("nanowire-plugin")
+    #logger.setLevel(logging.DEBUG)
 
-def bind(function: callable, name: str, version="1.0.0"):
-    """binds a function to the input message queue"""
-
+    
+    #write to screen to ensure logging is working ok
     logger.info("initialising nanowire lib")
+    #print("Initailising nanowire-lib")
 
+    #set the parameters for pika
     parameters = pika.ConnectionParameters(
         host=environ["AMQP_HOST"],
         port=int(environ["AMQP_PORT"]),
         credentials=pika.PlainCredentials(environ["AMQP_USER"], environ["AMQP_PASS"]),
-        heartbeat_interval=600)
+        heartbeat_interval=30)
 
+
+
+    #set up pika connection channels between rabbitmq and python
     connection = pika.BlockingConnection(parameters)
     input_channel = connection.channel()
     output_channel = connection.channel()
 
+
+
+    #set up the minio client
     minio_client = Minio(
         environ["MINIO_HOST"] + ":" + environ["MINIO_PORT"],
         access_key=environ["MINIO_ACCESS"],
@@ -47,15 +121,117 @@ def bind(function: callable, name: str, version="1.0.0"):
     minio_client.set_app_info(name, version)
 
     minio_client.list_buckets()
+    
+
 
     monitor_url = environ["MONITOR_URL"]
 
+    
     logger.info("initialised nanowire lib", extra={
         "monitor_url": monitor_url,
         "minio": environ["MINIO_HOST"],
         "rabbit": environ["AMQP_HOST"]
     })
+    logger.info("monitor_url: %s"%monitor_url)
+    logger.info("minio: %s"%environ["MINIO_HOST"])
+    logger.info("rabbit: %s"%environ["AMQP_HOST"])
 
+
+    logger.info("consuming from", extra={"queue": name})
+    #logger.info(name)
+
+
+        
+    input_channel.queue_declare(name, durable=True)
+
+    #all the stuff that needs to be passed into the callback function is stored
+    #in this object so that it can be easily passed through
+    requester = on_request_class(function, name, minio_client, output_channel, monitor_url)
+    
+    #set the queue length to one
+    input_channel.basic_qos(prefetch_count=1)    
+    
+    input_channel.basic_consume(requester.on_request, queue=name, no_ack=False)
+    
+    #print("Created basic consumer")
+    logger.info("Created basic consumer, info log")
+    
+        
+    
+    logger.info("About to start consuming")
+    
+    input_channel.start_consuming()
+    
+    
+
+
+
+
+def validate_payload(payload, name):
+    """ensures payload includes the required metadata and this plugin is in there"""
+
+    if "nmo" not in payload:
+        raise ProcessingError("no job in nmo")
+
+    if "job" not in payload["nmo"]:
+        raise ProcessingError("no job in nmo")
+
+    if "task" not in payload["nmo"]:
+        raise ProcessingError("no task in nmo")
+
+
+def get_this_plugin(this_plugin, workflow, logger):
+    """ensures the current plugin is present in the workflow"""
+    logger.info("getting this plugin info")
+    logger.info("this_plugin: %s"%this_plugin)
+    logger.info("workflow is: %s"%workflow)    
+    
+    for i, workpipe in enumerate(workflow):
+        if workpipe["config"]["name"] == this_plugin:
+            return i
+    return -1
+
+
+def get_next_plugin(this_plugin, workflow):
+    """returns the next plugin in the sequence"""
+    found = False
+    for workpipe in workflow:
+        if not found:
+            if workpipe["config"]["name"] == this_plugin:
+                found = True
+        else:
+            return workpipe["config"]["name"]
+
+    return None
+
+
+def set_status(monitor_url, job_id, task_id, name):
+    """sends a POST request to the monitor to notify it of task position"""
+    req = urllib.request.Request(
+        urllib.parse.urljoin(
+            monitor_url,
+            "/v3/task/status/%s/%s" % (job_id, task_id)),
+        data=json.dumps({
+            "t": int(time.time() * 1000 * 1000),
+            "id": task_id,
+            "p": name,
+        }).encode(),
+        headers={
+            "Content-Type": "application/json"
+        })
+    urllib.request.urlopen(req)
+
+
+
+def send(name, payload, input_channel, output_channel, method, properties, minio_client, monitor_url, function):
+    """unwraps a message and calls the user function"""
+    #log some info about what the send function has been given
+    logger.info("consumed message", extra={
+        "chan": input_channel,
+        "method": method,
+        "properties": properties})
+    
+    #set the system enviroment properties
     sys_env = [
         "AMQP_HOST",
         "AMQP_PORT",
@@ -69,218 +245,138 @@ def bind(function: callable, name: str, version="1.0.0"):
         "MONITOR_URL"
     ]
 
-    def send(method, payload: dict):
-        """unwraps a message and calls the user function"""
+    validate_payload(payload, name)
+    
+    logger.info("payload: %s"%payload)    
+    
+    #get the postion of the plugin in the pipeline
+    plugin_no = get_this_plugin(name, payload["nmo"]["job"]["workflow"], logger)
+    
+    logger.info("Plugin name: %s"%name)
+    
+    if plugin_no == -1:
+        raise ProcessingError(
+            "declared plugin name does not match workflow",
+            job_id=payload["nmo"]["job"]["job_id"],
+            task_id=payload["nmo"]["task"]["task_id"])
+    logger.info(plugin_no)
 
-        this = get_this_plugin(name, payload["nmo"]["job"]["workflow"])
-        if this == -1:
-            raise Exception("declared plugin name does not match workflow")
-
-        try:
-            set_status(monitor_url,
-                       payload["nmo"]["job"]["job_id"],
-                       payload["nmo"]["task"]["task_id"],
-                       name + ".consumed", error)
-        except Exception as exp:
-            logger.warning("failed to set status", extra={
-                "exception": str(exp),
-                "job_id": payload["nmo"]["job"]["job_id"],
-                "task_id": payload["nmo"]["task"]["task_id"]})
-
-        next_plugin = get_next_plugin(name, payload["nmo"]["job"]["workflow"])
-        if next_plugin is None:
-            logger.info("this is the final plugin", extra={
-                "job_id": payload["nmo"]["job"]["job_id"],
-                "task_id": payload["nmo"]["task"]["task_id"]})
-
-        path = join(
-            payload["nmo"]["task"]["task_id"],
-            "input",
-            "source",
-            payload["nmo"]["source"]["name"])
-
-        if not minio_client.bucket_exists(payload["nmo"]["job"]["job_id"]):
-            raise Exception("job_id does not have a bucket")
-
-        url = minio_client.presigned_get_object(payload["nmo"]["job"]["job_id"], path)
-
-        # calls the user function to mutate the JSON-LD data
-
-        if "env" in payload["nmo"]["job"]["workflow"][this]:
-            if isinstance(payload["nmo"]["job"]["workflow"][this]["env"], dict):
-                for ename, evalue in payload["nmo"]["job"]["workflow"][this]["env"].items():
-                    if ename in sys_env:
-                        logger.error("attempt to set plugin env var", extra={
-                            "name": ename,
-                            "attempted_value": evalue})
-                        continue
-
-                    environ[ename] = evalue
-
-        result = function(payload["nmo"], payload["jsonld"], url)
-
-        # if there are issues, just use the input and carry on the pipeline
-
-        if result is None:
-            logger.error("return value is None")
-            result = payload["jsonld"]
-
-        if not isinstance(result, dict):
-            logger.error("return value must be of type dict, not %s", type(result))
-            result = payload["jsonld"]
-
-        if result is None:
-            result = payload["jsonld"]
-        elif "jsonld" in result:
-            result = result["jsonld"]
-
-        payload["jsonld"] = result
-
-        logger.info("finished running user code", extra={
+    try:
+        set_status(monitor_url,
+                   payload["nmo"]["job"]["job_id"],
+                   payload["nmo"]["task"]["task_id"],
+                   name + ".consumed")
+    except Exception as exp:
+        logger.warning("failed to set status", extra={
+            "exception": str(exp),
             "job_id": payload["nmo"]["job"]["job_id"],
             "task_id": payload["nmo"]["task"]["task_id"]})
 
-        input_channel.basic_ack(method.delivery_tag)
-
-        if next_plugin:
-            output_channel.queue_declare(
-                next_plugin,
-                False,
-                True,
-                False,
-                False,
-            )
-            output_channel.basic_publish(
-                "",
-                next_plugin,
-                dumps(payload)
-            )
-
-        return {
+    next_plugin = get_next_plugin(name, payload["nmo"]["job"]["workflow"])
+    if next_plugin is None:
+        logger.info("this is the final plugin", extra={
             "job_id": payload["nmo"]["job"]["job_id"],
-            "task_id": payload["nmo"]["task"]["task_id"]
-        }
+            "task_id": payload["nmo"]["task"]["task_id"]})
 
-    logger.info("consuming from", extra={"queue": name})
+    #create the path to the target in minio
+    path = join(
+        payload["nmo"]["task"]["task_id"],
+        "input",
+        "source",
+        payload["nmo"]["source"]["name"])
 
-    try:
-        while True:
-            queue_state = input_channel.queue_declare(name, False, True, False, False)
-            if queue_state.method.message_count == 0:
-                time.sleep(3)
+    #check the job id exists in minio
+    if not minio_client.bucket_exists(payload["nmo"]["job"]["job_id"]):
+        raise ProcessingError(
+            "job_id does not have a bucket",
+            job_id=payload["nmo"]["job"]["job_id"],
+            task_id=payload["nmo"]["task"]["task_id"])
+
+    url = minio_client.presigned_get_object(payload["nmo"]["job"]["job_id"], path)
+
+
+
+    # calls the user function to mutate the JSON-LD data
+    if "env" in payload["nmo"]["job"]["workflow"][plugin_no]:
+        #logger.info("to split: %s"%payload["nmo"]["job"]["workflow"][plugin_no]["env"])
+        
+        
+        for ename in payload["nmo"]["job"]["workflow"][plugin_no]["env"].keys():
+            evalue = payload["nmo"]["job"]["workflow"][plugin_no]["env"][ename]
+            logger.info(ename + "  " + str(evalue))
+            
+            if ename in sys_env:
+                logger.error("attempt to set plugin env var", extra={
+                    "name": ename,
+                    "attempted_value": evalue})
                 continue
 
-            method_frame, header_frame, body = input_channel.basic_get(name)
-            if (method_frame, header_frame, body) == (None, None, None):
-                time.sleep(3)
-                continue  # queue empty
+            environ[ename] = evalue
 
-            if body is None:
-                logger.error("body received was empty")
-                time.sleep(3)
-                continue  # body empty
-
-            error = ""
-
-            try:
-                raw = body.decode("utf-8")
-                payload = loads(raw)
-                validate_payload(payload)
-            except Exception as exp:
-                logger.error(str(exp))
-                continue
-
-            meta = {
-                "job_id": payload["nmo"]["job"]["job_id"],
-                "task_id": payload["nmo"]["task"]["task_id"]
-            }
-
-            logger.info("consumed message", extra={
-                "job_id": meta["job_id"],
-                "task_id": meta["task_id"]})
-
-            try:
-                send(method_frame, payload)
-
-            except Exception as exp:
-                input_channel.basic_reject(method_frame.delivery_tag, False)
-                error = str(exp) + ": " + str(traceback.format_exc().splitlines())
-                logger.error(error, extra={
-                    "job_id": meta["job_id"],
-                    "task_id": meta["task_id"]})
-
-            finally:
-                if meta["job_id"] is not None and meta["task_id"] is not None:
-                    try:
-                        set_status(monitor_url, meta["job_id"],
-                                   meta["task_id"], name + ".done", error)
-                    except Exception as exp:
-                        logger.warning("failed to set status", extra={
-                            "exception": str(exp),
-                            "job_id": meta["job_id"],
-                            "task_id": meta["task_id"],
-                            "error": error})
-
-    except pika.exceptions.RecursionError as exp:
-        connection.close()
-        raise exp
+    #run the function that we're all here for
+    result = function(payload["nmo"], payload["jsonld"], url)
 
 
-def validate_payload(payload: dict) -> bool:
-    """ensures payload includes the required metadata and this plugin is in there"""
+    logger.info("result is:- ")
+    logger.info(result)
+    logger.info('')
+    logger.info('')
 
-    if "nmo" not in payload:
-        raise KeyError("no job in nmo")
+    
+    # if there are issues, just use the input and carry on the pipeline
+    
+    #if the plugin has produced no output then set the output to be the same as the input
+    if result is None:
+        logger.error("return value is None")
+        result = payload["jsonld"]
+        #this has potential to set result to None if the input jsonld is none
 
-    if "job" not in payload["nmo"]:
-        raise KeyError("no job in nmo")
-
-    if "task" not in payload["nmo"]:
-        raise KeyError("no task in nmo")
-
-
-def get_this_plugin(this_plugin: str, workflow: list)->int:
-    """ensures the current plugin is present in the workflow"""
-    for i, workpipe in enumerate(workflow):
-        if workpipe["config"]["name"] == this_plugin:
-            return i
-    return -1
-
-
-def get_next_plugin(this_plugin: str, workflow: list) -> str:
-    """returns the next plugin in the sequence"""
-    found = False
-    for workpipe in workflow:
-        if not found:
-            if workpipe["config"]["name"] == this_plugin:
-                found = True
+    #check to see if the result is a dictionary
+    if not isinstance(result, dict):
+        logger.error("return value must be of type dict, not %s", type(result))
+        result = payload["jsonld"]
+        #this still leaves room for errors if jsonld is also type None
+        
+        
+    #check to see that result is not an empty field. If result is None everything
+    #goes to shit
+    if result != None:
+        #if the result has jsonld as its top level then make it not so i.e
+        #result = {"jsonld": {blah blah blah in jsonld format}} becomes=>
+        #result = {blah blah blah in jsonld format}
+        if "jsonld" in result:
+            result = result["jsonld"]
         else:
-            return workpipe["config"]["name"]
+            result = result
 
-    return None
+    else:
+        result = None
 
+    #now set the payload jsonld to be the plugin output
+    payload["jsonld"] = result
 
-def set_status(monitor_url: str, job_id: str, task_id: str, name: str, error: str):
-    """sends a POST request to the monitor to notify it of task position"""
+    logger.info("finished running user code", extra={
+        "job_id": payload["nmo"]["job"]["job_id"],
+        "task_id": payload["nmo"]["task"]["task_id"]})
 
-    logger.info("posting status update", extra={"job_id": job_id, "task_id": task_id})
-    data = dumps({
-        "t": int(time.time() * 1000),
-        "id": task_id,
-        "p": name,
-        "e": error
-    }).encode()
+    #set up a connection to the output channel
+    input_channel.basic_ack(method.delivery_tag)
 
-    if "TESTING_MODE" in environ:
-        logger.info(data)
-        return
+    if next_plugin:
+        output_channel.queue_declare(
+            next_plugin,
+            False,
+            True,
+            False,
+            False,
+        )
+        output_channel.basic_publish(
+            "",
+            next_plugin,
+            json.dumps(payload)
+        )
 
-    req = urllib.request.Request(
-        urllib.parse.urljoin(
-            monitor_url,
-            "/v3/task/status/%s/%s" % (job_id, task_id)),
-        data=data,
-        headers={
-            "Content-Type": "application/json"
-        })
-    urllib.request.urlopen(req)
+    return {
+        "job_id": payload["nmo"]["job"]["job_id"],
+        "task_id": payload["nmo"]["task"]["task_id"]
+    }

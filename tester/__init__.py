@@ -15,7 +15,7 @@ LOG.addHandler(HND)
 LOG.setLevel(logging.INFO)
 
 
-def entry(nmo: dict, jsonld: dict, source: str) -> dict:
+def entry(nmo, jsonld, source):
     LOG.info("PLUGIN: %s:%s:%s", nmo["job"]["job_id"], nmo["task"]["task_id"], str(jsonld))
 
     LOG.info(str(environ))
