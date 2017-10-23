@@ -53,9 +53,6 @@ class on_request_class():
         logger.setLevel(logging.DEBUG)
      
         data = body.decode("utf-8")
-
-        logger.info("Receved data:-")
-        logger.info(data)
         
         if data == None:
             
