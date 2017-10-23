@@ -27,7 +27,7 @@ class ProcessingError(Exception):
         message -- explanation of the error
     """
 
-    def __init__(self, message: str, job_id: str=None, task_id: str=None, extra: dict=None):
+    def __init__(self, message, job_id, task_id, extra):
         super(ProcessingError, self).__init__(message)
         self.message = message
         self.extra = extra or {}
