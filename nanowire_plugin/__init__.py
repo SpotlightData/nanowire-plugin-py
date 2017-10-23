@@ -204,17 +204,27 @@ def get_next_plugin(this_plugin, workflow):
     return None
 
 
-def set_status(monitor_url, job_id, task_id, name):
+def set_status(monitor_url, job_id, task_id, name, error=0):
     """sends a POST request to the monitor to notify it of task position"""
+    if error != 0:
+        payload=json.dumps({
+            "t": int(time.time() * 1000 * 1000),
+            "p": name,
+            "jobId": job_id, 
+            "e": error})
+            
+    else:
+        payload=json.dumps({
+            "t": int(time.time() * 1000 * 1000),
+            "p": name,
+            "jobId": job_id})
+    
+    
     req = urllib.request.Request(
         urllib.parse.urljoin(
             monitor_url,
-            "/v3/task/status/%s/%s" % (job_id, task_id)),
-        data=json.dumps({
-            "t": int(time.time() * 1000 * 1000),
-            "id": task_id,
-            "p": name,
-        }).encode(),
+            "/v4/tasks/%s/positions"%task_id),
+        payload.encode(),
         headers={
             "Content-Type": "application/json"
         })
@@ -259,7 +269,9 @@ def send(name, payload, input_channel, output_channel, method, properties, minio
             job_id=payload["nmo"]["job"]["job_id"],
             task_id=payload["nmo"]["task"]["task_id"])
     logger.info("Plugin number %s in pipeline"%plugin_no)
-
+    
+    
+    logger.info("monitor url is: %s"%monitor_url)
     #I'm not 100% sure what this is doing
     try:
         set_status(monitor_url,
@@ -267,10 +279,15 @@ def send(name, payload, input_channel, output_channel, method, properties, minio
                    payload["nmo"]["task"]["task_id"],
                    name + ".consumed")
     except Exception as exp:
-        logger.warning("failed to set status", extra={
-            "exception": str(exp),
-            "job_id": payload["nmo"]["job"]["job_id"],
-            "task_id": payload["nmo"]["task"]["task_id"]})
+        logger.warning("failed to set status")
+        logger.warning("exception: %s"%str(exp))
+        logger.warning("job_id: %s"%payload["nmo"]["job"]["job_id"])
+        logger.warning("task_id: %s"%payload["nmo"]["task"]["task_id"])
+                       
+                       #extra={
+            #"exception": str(exp),
+            #"job_id": payload["nmo"]["job"]["job_id"],
+            #"task_id": payload["nmo"]["task"]["task_id"]})
 
     next_plugin = get_next_plugin(name, payload["nmo"]["job"]["workflow"])
     if next_plugin is None:
@@ -316,11 +333,6 @@ def send(name, payload, input_channel, output_channel, method, properties, minio
     #run the function that we're all here for
     result = function(payload["nmo"], payload["jsonld"], url)
 
-
-    #logger.info("result is:- ")
-    #logger.info(result)
-    #logger.info('')
-    #logger.info('')
 
     
     # if there are issues, just use the input and carry on the pipeline
