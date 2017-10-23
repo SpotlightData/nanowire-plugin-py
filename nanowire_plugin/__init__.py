@@ -54,7 +54,8 @@ class on_request_class():
      
         data = body.decode("utf-8")
 
-
+        logger.info("Receved data:-")
+        logger.info(data)
         
         if data == None:
             
