@@ -61,6 +61,10 @@ class on_request_class():
         logger.setLevel(logging.DEBUG)
         #print("Inside the function")
 
+
+        #logger.info("raw data is:- %s"%body)
+        
+        
         data = body.decode("utf-8")
 
         #logger.info("Receved data:-")
@@ -176,7 +180,7 @@ def bind(function, name, version="1.0.0"):
         
     input_channel.start_consuming()
     
-    logger.info("Past start consumint, not sure whats going on...")
+    logger.info("Past start consuming, not sure whats going on...")
 
 
 
@@ -198,7 +202,7 @@ def get_this_plugin(this_plugin, workflow, logger):
     """ensures the current plugin is present in the workflow"""
     logger.info("getting this plugin info")
     logger.info("this_plugin: %s"%this_plugin)
-    logger.info("workflow is: %s"%workflow)    
+    #logger.info("workflow is: %s"%workflow)    
     
     for i, workpipe in enumerate(workflow):
         if workpipe["config"]["name"] == this_plugin:
@@ -237,7 +241,7 @@ def set_status(monitor_url, job_id, task_id, name, error=0):
     #if we're working with python3
     if sys.version_info.major == 3:
         
-        logger.info("Running in python3")
+        logger.info("Running in python2")
         
         request_url = urllib.parse.urljoin(monitor_url,"/v4/tasks/%s/positions"%task_id)
         
@@ -310,6 +314,7 @@ def send(name, payload, input_channel, output_channel, method, properties, minio
     
     
     logger.info("monitor url is: %s"%monitor_url)
+    logger.info("filename is %s"%payload["nmo"]["source"]["name"])    
     #I'm not 100% sure what this is doing
     try:
         set_status(monitor_url,
@@ -409,28 +414,35 @@ def send(name, payload, input_channel, output_channel, method, properties, minio
         "job_id": payload["nmo"]["job"]["job_id"],
         "task_id": payload["nmo"]["task"]["task_id"]})
     
-    #set up a connection to the output channel
-    input_channel.basic_ack(method.delivery_tag)
 
     if next_plugin:
-        #output_channel.queue_declare(
-        #    next_plugin,
-        #    False,
-        #    True,
-        #    False,
-        #    False,
-        #)
+            
+    
         output_channel.queue_declare(
             next_plugin,
             durable=True
             )
+            
+        #make a delivery confimation request
+        #output_channel.confirm_delivery()
     
-        output_channel.basic_publish(
-            "",
-            next_plugin,
-            json.dumps(payload),
-            pika.BasicProperties(delivery_mode=2)
-        )
+        send_result = output_channel.basic_publish("", next_plugin, json.dumps(payload), pika.BasicProperties(delivery_mode=2))
+
+    
+        if send_result:
+            
+                logger.info("Output was published for %s"%payload["nmo"]["source"]["name"])
+                
+                
+        else:
+            logger.warning("Output was not published for %s"%payload["nmo"]["source"]["name"])
+            logger.warning("next plugin: %s"%next_plugin)
+
+    else:
+        logger.warning("There is no next plugin, this might be what's going wrong")
+    
+    #set up a connection to the output channel
+    input_channel.basic_ack(method.delivery_tag)
 
     return {
         "job_id": payload["nmo"]["job"]["job_id"],
