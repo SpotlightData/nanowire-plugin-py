@@ -1,9 +1,17 @@
 #!/usr/bin/env python3
 
 from setuptools import setup
+import os
+
+here = os.getcwd()
+contents = os.listdir(here)
+
+print(here)
+print(contents)
+
 
 VERSION = None
-with open("VERSION") as f:
+with open("./VERSION") as f:
     VERSION = f.read()
 
 setup(
