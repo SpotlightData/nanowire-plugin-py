@@ -7,13 +7,21 @@ import logging
 import json
 from os import environ
 from os.path import join
-import urllib
-import time
 
+import time
+import sys
 import pika
 from minio import Minio
 from minio.error import AccessDenied
 
+#import the relavant version of urllib depending on the version of python we are
+#working with
+if sys.version_info.major == 3:
+    import urllib
+elif sys.version_info.major == 2:
+    import urllib2
+else:
+    import urllib
 
 #set up the logger globally
 logger = logging.getLogger("nanowire-plugin")
@@ -51,8 +59,15 @@ class on_request_class():
         
         #set up logging inside the server functions
         logger.setLevel(logging.DEBUG)
-     
+        #print("Inside the function")
+
         data = body.decode("utf-8")
+
+        #logger.info("Receved data:-")
+        #logger.info(data)
+        #logger.info("=========================================")
+        #print("Receved data:-")
+        #print(data)
         
         if data == None:
             
@@ -60,19 +75,20 @@ class on_request_class():
             #print("Empty input")
             
         else:
-            logger.info(data)
+            #logger.info(data)
             payload = json.loads(data)
             
             validate_payload(payload, self.name)
             
-            logger.info("Payload is:- ")
-            logger.info(payload)
+            #logger.info("Payload is:- ")
+            #logger.info(payload)
 
+
+        returned = send(self.name, payload, ch, self.output_channel, method, props, self.minio_client, self.monitor_url, self.function)
         
-
-
-        send(self.name, payload, ch, self.output_channel, method, props, self.minio_client, self.monitor_url, self.function)
         
+        logger.info("returned, %s"%returned)
+        logger.info("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
         #ch.basic_publish(exchange='',
         #                 routing_key=self.name,
         #                 properties=pika.BasicProperties(correlation_id=props.correlation_id), body=str(response))
@@ -85,14 +101,14 @@ def bind(function, name, version="1.0.0"):
     """binds a function to the input message queue"""
     
     #setup logger
-    logger.setLevel(logging.DEBUG)
 
     #set up the logging
     #logger = logging.getLogger("nanowire-plugin")
-    #logger.setLevel(logging.DEBUG)
+    logger.setLevel(logging.DEBUG)
 
     
     #write to screen to ensure logging is working ok
+    #print "Initialising nanowire lib, this is a print"
     logger.info("initialising nanowire lib")
     #print("Initailising nanowire-lib")
 
@@ -132,13 +148,14 @@ def bind(function, name, version="1.0.0"):
         "minio": environ["MINIO_HOST"],
         "rabbit": environ["AMQP_HOST"]
     })
+    
     logger.info("monitor_url: %s"%monitor_url)
     logger.info("minio: %s"%environ["MINIO_HOST"])
     logger.info("rabbit: %s"%environ["AMQP_HOST"])
 
 
     logger.info("consuming from", extra={"queue": name})
-    #logger.info(name)
+    logger.info(name)
 
 
         
@@ -155,11 +172,11 @@ def bind(function, name, version="1.0.0"):
     
     #print("Created basic consumer")
     logger.info("Created basic consumer")
-    
+    #print("ENTERING THE FUNCTION")
         
     input_channel.start_consuming()
     
-    
+    logger.info("Past start consumint, not sure whats going on...")
 
 
 
@@ -217,16 +234,39 @@ def set_status(monitor_url, job_id, task_id, name, error=0):
             "p": name,
             "jobId": job_id})
     
+    #if we're working with python3
+    if sys.version_info.major == 3:
+        
+        logger.info("Running in python2")
+        
+        request_url = urllib.parse.urljoin(monitor_url,"/v4/tasks/%s/positions"%task_id)
+        
+        req = urllib.request.Request(request_url,
+            payload.encode(),
+            headers={
+                "Content-Type": "application/json"
+            })
+        urllib.request.urlopen(req)
     
-    req = urllib.request.Request(
-        urllib.parse.urljoin(
-            monitor_url,
-            "/v4/tasks/%s/positions"%task_id),
-        payload.encode(),
-        headers={
-            "Content-Type": "application/json"
-        })
-    urllib.request.urlopen(req)
+    #if we're working with python2
+    elif sys.version_info.major == 2:
+        
+        logger.info("Running in python2")
+        
+        #there's no urljoin command in python2
+        request_url = monitor_url + "/v4/tasks/%s/positions"%task_id       
+        
+        req = urllib2.Request(request_url,
+            payload.encode(),
+            headers={
+                "Content-Type": "application/json"
+            })
+        urllib2.urlopen(req)
+    
+    #if we're not in python2 or python3
+    else:
+        
+        logger.warning("Running in an unknown version of python:- %s"%str(sys.version_info))
 
 
 
@@ -331,7 +371,7 @@ def send(name, payload, input_channel, output_channel, method, properties, minio
     #run the function that we're all here for
     result = function(payload["nmo"], payload["jsonld"], url)
 
-
+    logger.info("Result is:- %s"%str(result))
     
     # if there are issues, just use the input and carry on the pipeline
     
@@ -365,25 +405,31 @@ def send(name, payload, input_channel, output_channel, method, properties, minio
     #now set the payload jsonld to be the plugin output
     payload["jsonld"] = result
 
-    logger.info("finished running user code", extra={
+    logger.info("finished running user code on %s"%payload["nmo"]["source"]["name"], extra={
         "job_id": payload["nmo"]["job"]["job_id"],
         "task_id": payload["nmo"]["task"]["task_id"]})
-
+    
     #set up a connection to the output channel
     input_channel.basic_ack(method.delivery_tag)
 
     if next_plugin:
+        #output_channel.queue_declare(
+        #    next_plugin,
+        #    False,
+        #    True,
+        #    False,
+        #    False,
+        #)
         output_channel.queue_declare(
             next_plugin,
-            False,
-            True,
-            False,
-            False,
-        )
+            durable=True
+            )
+    
         output_channel.basic_publish(
             "",
             next_plugin,
-            json.dumps(payload)
+            json.dumps(payload),
+            pika.BasicProperties(delivery_mode=2)
         )
 
     return {
