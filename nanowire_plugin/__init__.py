@@ -237,7 +237,7 @@ def set_status(monitor_url, job_id, task_id, name, error=0):
     #if we're working with python3
     if sys.version_info.major == 3:
         
-        logger.info("Running in python2")
+        logger.info("Running in python3")
         
         request_url = urllib.parse.urljoin(monitor_url,"/v4/tasks/%s/positions"%task_id)
         
