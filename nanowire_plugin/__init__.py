@@ -491,7 +491,7 @@ def inform_monitor(payload, name, monitor_url, minio_client):
     #this is effectivly type checking for the payload
     validate_payload(payload)
     
-    logger.info("payload: %s"%payload)    
+    #logger.info("payload: %s"%payload)    
     
     #get the postion of the plugin in the pipeline
     plugin_no = get_this_plugin(name, payload["nmo"]["job"]["workflow"])
