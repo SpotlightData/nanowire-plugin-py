@@ -408,19 +408,10 @@ def send(name, payload, input_channel, output_channel, method, properties, minio
     elif sys.version_info.major == 2:
         if str(type(method)) != "<class 'pika.spec.Deliver'>":
             raise Exception("Method needs to be a pika method, it is actually: %s"%str(type(method)))
-        
 
     #check the payload
     validate_payload(payload)
     
-    #check the output channel is a pika channel
-    
-    #check the output channel is open
-    
-    
-        
-    
-    #check the function is a function
     
     #log some info about what the send function has been given
     logger.info("consumed message")
@@ -436,12 +427,29 @@ def send(name, payload, input_channel, output_channel, method, properties, minio
         next_plugin = str(next_plugin)
 
 
-    #run the function that we're all here for
-    result = function(payload["nmo"], payload["jsonld"], url)
-
+    try:
+        #run the function that we're all here for
+        result = function(payload["nmo"], payload["jsonld"], url)
+        err = 0
+    except Exception as e:
+        result = None
+        err = str(e)
+        logger.info("Sending exception to monitor: %s"%str(e))
+        
+        
+        
+    try:
+        set_status(monitor_url,
+                   payload["nmo"]["job"]["job_id"],
+                   payload["nmo"]["task"]["task_id"],
+                   name + ".consumed", error=err)
+    except Exception as exp:
+        logger.warning("failed to set status")
+        logger.warning("exception: %s"%str(exp))
+        logger.warning("job_id: %s"%payload["nmo"]["job"]["job_id"])
+        logger.warning("task_id: %s"%payload["nmo"]["task"]["task_id"])
     #this log is for debug but makes the logs messy when left in production code
     #logger.info("Result is:- %s"%str(result))
-
 
     #now set the payload jsonld to be the plugin output, after ensuring that the output is
     # in EXACTLY the right format
@@ -510,16 +518,7 @@ def inform_monitor(payload, name, monitor_url, minio_client):
     logger.info("filename is %s"%payload["nmo"]["source"]["name"])    
     #Inform the monitor as to where we are. If we can't then list a series of
     #warnings
-    try:
-        set_status(monitor_url,
-                   payload["nmo"]["job"]["job_id"],
-                   payload["nmo"]["task"]["task_id"],
-                   name + ".consumed")
-    except Exception as exp:
-        logger.warning("failed to set status")
-        logger.warning("exception: %s"%str(exp))
-        logger.warning("job_id: %s"%payload["nmo"]["job"]["job_id"])
-        logger.warning("task_id: %s"%payload["nmo"]["task"]["task_id"])
+    
                        
 
     #if this is the final plugin in the process send a log stating as such
