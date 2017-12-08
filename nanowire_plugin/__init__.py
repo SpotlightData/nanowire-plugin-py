@@ -23,6 +23,7 @@ import time
 import sys
 import pika
 from minio import Minio
+import datetime
 #from minio.error import AccessDenied
 
 #import the relavant version of urllib depending on the version of python we are
@@ -153,7 +154,7 @@ class on_request_class():
 
         returned = send(self.name, payload, ch, self.output_channel, method, props, self.minio_client, self.monitor_url, self.function)
         
-        
+        logger.info("Finished running user code at %s"%str(datetime.datetime.now()))
         logger.info("returned, %s"%returned)
         logger.info("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
         #ch.basic_publish(exchange='',
