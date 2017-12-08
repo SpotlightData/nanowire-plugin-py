@@ -142,7 +142,7 @@ class on_request_class():
             try:
                 payload = json.loads(data)
             except:
-                raise Exception("Problem with payload, payload should be json serializeable. Payload is %s"%data)
+                raise Exception("Problem with payload, payload should be json serializeable. Payload is %s"%type(data))
                 
             #check that the payload is valid. If not this function returns the errors that tell the user why it's not
             #valid                
