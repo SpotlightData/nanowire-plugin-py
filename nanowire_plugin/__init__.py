@@ -16,7 +16,7 @@ from os import environ
 from os.path import join
 import inspect
 
-
+import threading
 
 
 import time
@@ -36,6 +36,27 @@ else:
 #set up the logger globally
 logger = logging.getLogger("nanowire-plugin")
 
+
+
+class heart_runner():
+    
+    def __init__(self, connection):
+        
+        self.connection = connection
+        self.internal_lock = threading.Lock()
+    
+
+    def _process_data_events(self):
+            """Check for incoming data events.
+            We do this on a thread to allow the flask instance to send
+            asynchronous requests.
+            It is important that we lock the thread each time we check for events.
+            """
+    
+            while True:
+                with self.internal_lock:
+                    self.connection.process_data_events()
+                    time.sleep(0.1)
 
 
 
@@ -173,7 +194,6 @@ def bind(function, name, version="1.0.0"):
     #write to screen to ensure logging is working ok
     #print "Initialising nanowire lib, this is a print"
     logger.info("initialising nanowire lib")
-    #print("Initailising nanowire-lib")
 
     #set the parameters for pika
     parameters = pika.ConnectionParameters(
@@ -182,13 +202,19 @@ def bind(function, name, version="1.0.0"):
         credentials=pika.PlainCredentials(environ["AMQP_USER"], environ["AMQP_PASS"]),
         heartbeat=30)
 
-
-
     #set up pika connection channels between rabbitmq and python
     connection = pika.BlockingConnection(parameters)
     input_channel = connection.channel()
     output_channel = connection.channel()
 
+
+    #setup the pacemaker
+    pacemaker = heart_runner(connection)
+
+    #set up this deamon thread in order to avoid everything dying due to a heartbeat timeout
+    thread = threading.Thread(target=pacemaker._process_data_events)
+    thread.setDaemon(True)
+    thread.start()
 
 
     #set up the minio client
