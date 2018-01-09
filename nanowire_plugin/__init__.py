@@ -76,17 +76,19 @@ class on_request_class():
         #check to see if the input function has the correct number of arguments. This changes depending on whether we're working
         #in python2 or python3 because apparantly unit testing is super important and my time isn't
         if sys.version_info.major == 3:
-            if len(list(inspect.signature(function).parameters)) != 3:
+            if len(list(inspect.signature(function).parameters)) != 3 and list(inspect.signature(function).parameters) != ['self', 'nmo', 'jsonld', 'url']:
+
                 raise Exception("Bound function must take 3 arguments: nmo, jsonld and url")          
             
-            if list(inspect.signature(function).parameters) != ['nmo', 'jsonld', 'url']:
+            if list(inspect.signature(function).parameters) != ['nmo', 'jsonld', 'url'] or list(inspect.signature(function).parameters) != ['self', 'nmo', 'jsonld', 'url']:
                 raise Exception("Bound function must use argument names: [nmo, jsonld, url]. You have used %s"%list(inspect.signature(function).parameters))     
             
         elif sys.version_info.major ==2:
-            if len(inspect.getargspec(function)[0]) != 3:
+            if len(inspect.getargspec(function)[0]) != 3 and inspect.getargspec(function)[0] != ['self', 'nmo', 'jsonld', 'url']:
+
                 raise Exception("Bound function must take 3 arguments: nmo, jsonld and url")          
             
-            if inspect.getargspec(function)[0] != ['nmo', 'jsonld', 'url']:
+            if inspect.getargspec(function)[0] != ['nmo', 'jsonld', 'url'] and inspect.getargspec(function)[0] != ['self', 'nmo', 'jsonld', 'url']:
                 raise Exception("Bound function must use argument names: [nmo, jsonld, url]. You have used %s"%inspect.getargspec(function)[0])     
             
         #setting up the class type checking
@@ -175,17 +177,15 @@ def bind(function, name, version="1.0.0", pulserate=30):
     
     #check to see if the input function has the correct number of arguments
     if sys.version_info.major == 3:
-        if len(list(inspect.signature(function).parameters)) != 3:
-            raise Exception("Bound function must take 3 arguments: nmo, jsonld and url")          
+       
         
-        if list(inspect.signature(function).parameters) != ['nmo', 'jsonld', 'url']:
+        if list(inspect.signature(function).parameters) != ['nmo', 'jsonld', 'url'] and list(inspect.signature(function).parameters) != ['self', 'nmo', 'jsonld', 'url']:
             raise Exception("Bound function must use argument names: [nmo, jsonld, url]. You have used %s"%list(inspect.signature(function).parameters))     
         
     elif sys.version_info.major == 2:
-        if len(inspect.getargspec(function)[0]) != 3:
-            raise Exception("Bound function must take 3 arguments: nmo, jsonld and url")          
         
-        if inspect.getargspec(function)[0] != ['nmo', 'jsonld', 'url']:
+        
+        if inspect.getargspec(function)[0] != ['nmo', 'jsonld', 'url'] and inspect.getargspec(function)[0] != ['self', 'nmo', 'jsonld', 'url']:
             raise Exception("Bound function must use argument names: [nmo, jsonld, url]. You have used %s"%inspect.getargspec(function)[0])
 
     #set up the logging
