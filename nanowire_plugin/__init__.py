@@ -9,7 +9,7 @@ Created on Wed Oct 25 11:30:46 2017
 """
 Provides a `bind` function to plugins so they can simply bind a function to a queue.
 """
-
+import traceback
 import logging
 import json
 from os import environ
@@ -42,6 +42,12 @@ logger = logging.getLogger("nanowire-plugin")
 class heart_runner():
     
     def __init__(self, connection):
+        
+        if "blockingconnection" not in str(connection).lower() and "mock" not in str(connection).lower():
+            raise Exception("Heartbeat runner requires a connection to rabbitmq as connection, actually has %s, a %s"%(str(connection), type(connection)))
+        
+        if connection.is_open == False:
+            raise Exception("Heart runner's connection to rabbitmq should be open, is actually closed")
         
         self.connection = connection
         self.internal_lock = threading.Lock()
@@ -83,8 +89,6 @@ class on_request_class():
             if inspect.getargspec(function)[0] != ['nmo', 'jsonld', 'url']:
                 raise Exception("Bound function must use argument names: [nmo, jsonld, url]. You have used %s"%inspect.getargspec(function)[0])     
             
-        
-        
         #setting up the class type checking
         if not isinstance(name, str):
             raise Exception("plugin name should be a string, it is actually %s"%name)
@@ -93,9 +97,10 @@ class on_request_class():
         if not isinstance(monitor_url, str):
             raise Exception("monitor_url should be a string, it is actually %s"%monitor_url)
         
-        if not str(type(output_channel)) == "<class 'pika.adapters.blocking_connection.BlockingChannel'>":
+        if not str(type(output_channel)) == "<class 'pika.adapters.blocking_connection.BlockingChannel'>" and "mock" not in str(output_channel).lower():
             raise Exception("output channel should be a pika blocking connection channel it is actually %s"%output_channel)
-            
+        
+
         if not output_channel.is_open:
             raise Exception("Output channel is closed")
        
@@ -126,34 +131,30 @@ class on_request_class():
 
         data = body.decode("utf-8")
 
-        #logger.info("Receved data:-")
-        #logger.info(data)
-
-        
         if data == None:
             
             logger.info("Empty input")
             #print("Empty input")
             
         else:
-            #logger.info(data)
-            
+
             #try to load the payload into a dictionary
             try:
                 payload = json.loads(data)
             except:
-                raise Exception("Problem with payload, payload should be json serializeable. Payload is %s"%type(data))
+                logger.error("The end of the file may have been cut off by rabbitMQ, last 10 characters are: %s"%data[0:10])
+                raise Exception("Problem with payload, payload should be json serializeable. Payload is %s"%data)
                 
             #check that the payload is valid. If not this function returns the errors that tell the user why it's not
             #valid                
             validate_payload(payload)
             
-            #logger.info("Payload is:- ")
-            #logger.info(payload)
+
 
 
         returned = send(self.name, payload, ch, self.output_channel, method, props, self.minio_client, self.monitor_url, self.function)
         
+
         logger.info("Finished running user code at %s"%str(datetime.datetime.now()))
         logger.info("returned, %s"%returned)
         logger.info("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
@@ -165,8 +166,9 @@ class on_request_class():
     
 
 
-def bind(function, name, version="1.0.0"):
+def bind(function, name, version="1.0.0", pulserate=30):
     """binds a function to the input message queue"""
+    
     
     if not isinstance(name, str):
         raise Exception("plugin name should be a string, it is actually %s"%name)
@@ -184,30 +186,28 @@ def bind(function, name, version="1.0.0"):
             raise Exception("Bound function must take 3 arguments: nmo, jsonld and url")          
         
         if inspect.getargspec(function)[0] != ['nmo', 'jsonld', 'url']:
-            raise Exception("Bound function must use argument names: [nmo, jsonld, url]. You have used %s"%inspect.getargspec(function)[0])     
-        
-
+            raise Exception("Bound function must use argument names: [nmo, jsonld, url]. You have used %s"%inspect.getargspec(function)[0])
 
     #set up the logging
     logger.setLevel(logging.DEBUG)
 
-    
     #write to screen to ensure logging is working ok
     #print "Initialising nanowire lib, this is a print"
     logger.info("initialising nanowire lib")
+    
+    logger.info("initialising plugin: %s"%name)
 
     #set the parameters for pika
     parameters = pika.ConnectionParameters(
         host=environ["AMQP_HOST"],
         port=int(environ["AMQP_PORT"]),
         credentials=pika.PlainCredentials(environ["AMQP_USER"], environ["AMQP_PASS"]),
-        heartbeat=30)
+        heartbeat=pulserate)
 
     #set up pika connection channels between rabbitmq and python
     connection = pika.BlockingConnection(parameters)
     input_channel = connection.channel()
     output_channel = connection.channel()
-
 
     #setup the pacemaker
     pacemaker = heart_runner(connection)
@@ -227,12 +227,8 @@ def bind(function, name, version="1.0.0"):
         
     minio_client.set_app_info(name, version)
 
-    
-
-
     monitor_url = environ["MONITOR_URL"]
 
-    
     logger.info("initialised nanowire lib", extra={
         "monitor_url": monitor_url,
         "minio": environ["MINIO_HOST"],
@@ -246,8 +242,6 @@ def bind(function, name, version="1.0.0"):
 
     logger.info("consuming from %s"%name)
 
-
-        
     input_channel.queue_declare(name, durable=True)
 
     #all the stuff that needs to be passed into the callback function is stored
@@ -304,8 +298,6 @@ def get_this_plugin(this_plugin, workflow):
         raise Exception("Workflow is empty, something is wrong")
     
     
-    
-    logger.info("getting this plugin info")
     logger.info("this_plugin: %s"%this_plugin)
     
     for i, workpipe in enumerate(workflow):
@@ -404,7 +396,7 @@ def set_status(monitor_url, job_id, task_id, name, error=0):
 
 
 def send(name, payload, input_channel, output_channel, method, properties, minio_client, monitor_url, function):
-    """unwraps a message and calls the user function"""
+    """unwraps a message and calls the user function"""   
     
     #check the plugin name
     if not isinstance(name, str):
@@ -412,7 +404,7 @@ def send(name, payload, input_channel, output_channel, method, properties, minio
 
     
     #check that the input channel is indeed a pika channel
-    if not str(type(input_channel)) == "<class 'pika.adapters.blocking_connection.BlockingChannel'>":
+    if not str(type(input_channel)) == "<class 'pika.adapters.blocking_connection.BlockingChannel'>"  and "mock" not in str(input_channel).lower():
             raise Exception("Input channel should be a pika blocking connection channel it is actually %s"%output_channel)
         
     #check the input channel is open
@@ -420,7 +412,7 @@ def send(name, payload, input_channel, output_channel, method, properties, minio
         raise Exception("Input channel is closed") 
     
     #check that the output channel is indeed a pika channel
-    if not str(type(output_channel)) == "<class 'pika.adapters.blocking_connection.BlockingChannel'>":
+    if not str(type(output_channel)) == "<class 'pika.adapters.blocking_connection.BlockingChannel'>" and "mock" not in str(output_channel).lower():
             raise Exception("Output channel should be a pika blocking connection channel it is actually %s"%output_channel)
         
     #check the output channel is open
@@ -429,11 +421,11 @@ def send(name, payload, input_channel, output_channel, method, properties, minio
         
         
     if sys.version_info.major == 3:
-        if str(type(method)) != "<class 'pika.spec.Basic.Deliver'>":
+        if str(type(method)) != "<class 'pika.spec.Basic.Deliver'>" and "mock" not in str(type(method)):
             raise Exception("Method needs to be a pika method, it is actually: %s"%str(type(method)))
             
     elif sys.version_info.major == 2:
-        if str(type(method)) != "<class 'pika.spec.Deliver'>":
+        if str(type(method)) != "<class 'pika.spec.Deliver'>" and "mock" not in str(type(method)):
             raise Exception("Method needs to be a pika method, it is actually: %s"%str(type(method)))
 
     #check the payload
@@ -460,8 +452,8 @@ def send(name, payload, input_channel, output_channel, method, properties, minio
         err = 0
     except Exception as e:
         result = None
-        err = str(e)
-        logger.info("Sending exception to monitor: %s"%str(e))
+        err = traceback.format_exc()
+        logger.info("Sending exception to monitor: %s"%str(err))
         
         
         
@@ -475,6 +467,7 @@ def send(name, payload, input_channel, output_channel, method, properties, minio
         logger.warning("exception: %s"%str(exp))
         logger.warning("job_id: %s"%payload["nmo"]["job"]["job_id"])
         logger.warning("task_id: %s"%payload["nmo"]["task"]["task_id"])
+        
     #this log is for debug but makes the logs messy when left in production code
     #logger.info("Result is:- %s"%str(result))
 
@@ -526,8 +519,6 @@ def inform_monitor(payload, name, monitor_url, minio_client):
     #this is effectivly type checking for the payload
     validate_payload(payload)
     
-    #logger.info("payload: %s"%payload)    
-    
     #get the postion of the plugin in the pipeline
     plugin_no = get_this_plugin(name, payload["nmo"]["job"]["workflow"])
     
@@ -575,8 +566,6 @@ def inform_monitor(payload, name, monitor_url, minio_client):
 
     # calls the user function to mutate the JSON-LD data
     if "env" in payload["nmo"]["job"]["workflow"][plugin_no]:
-        #logger.info("to split: %s"%payload["nmo"]["job"]["workflow"][plugin_no]["env"])
-        
         
         for ename in payload["nmo"]["job"]["workflow"][plugin_no]["env"].keys():
             evalue = payload["nmo"]["job"]["workflow"][plugin_no]["env"][ename]
@@ -604,14 +593,14 @@ def send_to_next_plugin(next_plugin, payload, output_channel):
         raise Exception("nmo is critical to payload however is missing, payload is currently %s"%payload)
     
     #check that the output channel is indeed a pika channel
-    if not str(type(output_channel)) == "<class 'pika.adapters.blocking_connection.BlockingChannel'>":
+    if not str(type(output_channel)) == "<class 'pika.adapters.blocking_connection.BlockingChannel'>" and "mock" not in str(output_channel).lower():
             raise Exception("output channel should be a pika blocking connection channel it is actually %s"%output_channel)
         
     #check the output channel is open
     if not output_channel.is_open:
         raise Exception("Output channel is closed") 
 
-    if next_plugin:
+    if next_plugin != None:
             
         #declare a queue for outputing the results to the next plugin
         output_channel.queue_declare(
@@ -631,7 +620,7 @@ def send_to_next_plugin(next_plugin, payload, output_channel):
 
     else:
         logger.warning("There is no next plugin, if this is not a storage plugin you may loose analysis data")
-        
+
 
 
 def clean_function_output(result, payload):
@@ -640,10 +629,10 @@ def clean_function_output(result, payload):
     #if the plugin has not produced a dictionary then we look to replace it with
     #something more sensible
     if not isinstance(result, dict):
-        logger.error("Return value is not a dictionary it is:- %s"%result)
+        logger.error("Return value from clean function output is not a dictionary it is:- %s, a %s"%(str(result), type(result)))
         
         if isinstance(payload, dict):
-            #logger.error("Payload is not a dictionary, it is %s"%payload)
+            logger.error("Payload is not a dictionary, it is %s, a %s"%(str(payload), type(payload)))
             
             if "jsonld" in payload:
                 
