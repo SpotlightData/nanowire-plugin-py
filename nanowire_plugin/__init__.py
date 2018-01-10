@@ -613,7 +613,7 @@ def send_to_next_plugin(next_plugin, payload, output_channel):
               
         
         #send the result from this plugin to the next plugin in the pipeline
-        send_result = output_channel.basic_publish("", next_plugin, json.dumps(payload), pika.BasicProperties(delivery_mode=2))
+        send_result = output_channel.basic_publish("", next_plugin, json.dumps(payload), pika.BasicProperties(content_type='text/plain', delivery_mode=2))
         
         if test_result != json.dumps(payload):
             logger.warning("Plugin has not published correct message, message should be:\n %s \n but has come out as: \n %s \n")
