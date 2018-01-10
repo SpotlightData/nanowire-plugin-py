@@ -631,7 +631,7 @@ def clean_function_output(result, payload):
     if not isinstance(result, dict):
         logger.error("Return value from clean function output is not a dictionary it is:- %s, a %s"%(str(result), type(result)))
         
-        if isinstance(payload, dict):
+        if not isinstance(payload, dict):
             logger.error("Payload is not a dictionary, it is %s, a %s"%(str(payload), type(payload)))
             
             if "jsonld" in payload:
