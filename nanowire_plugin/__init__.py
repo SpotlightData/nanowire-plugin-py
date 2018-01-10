@@ -80,8 +80,8 @@ class on_request_class():
 
                 raise Exception("Bound function must take 3 arguments: nmo, jsonld and url")          
             
-            if list(inspect.signature(function).parameters) != ['nmo', 'jsonld', 'url'] or list(inspect.signature(function).parameters) != ['self', 'nmo', 'jsonld', 'url']:
-                raise Exception("Bound function must use argument names: [nmo, jsonld, url]. You have used %s"%list(inspect.signature(function).parameters))     
+            if list(inspect.signature(function).parameters) != ['nmo', 'jsonld', 'url'] and list(inspect.signature(function).parameters) != ['self', 'nmo', 'jsonld', 'url']:
+                raise Exception("Bound function must use argument names: ['nmo', 'jsonld', 'url']. You have used %s"%list(inspect.signature(function).parameters))     
             
         elif sys.version_info.major ==2:
             if len(inspect.getargspec(function)[0]) != 3 and inspect.getargspec(function)[0] != ['self', 'nmo', 'jsonld', 'url']:
