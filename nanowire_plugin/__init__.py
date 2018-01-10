@@ -202,7 +202,8 @@ def bind(function, name, version="1.0.0", pulserate=30):
         host=environ["AMQP_HOST"],
         port=int(environ["AMQP_PORT"]),
         credentials=pika.PlainCredentials(environ["AMQP_USER"], environ["AMQP_PASS"]),
-        heartbeat=pulserate)
+        heartbeat=pulserate,
+        socket_timeout=10)
 
     #set up pika connection channels between rabbitmq and python
     connection = pika.BlockingConnection(parameters)
@@ -607,9 +608,16 @@ def send_to_next_plugin(next_plugin, payload, output_channel):
             next_plugin,
             durable=True
             )
-            
+        
+        
+              
+        
         #send the result from this plugin to the next plugin in the pipeline
         send_result = output_channel.basic_publish("", next_plugin, json.dumps(payload), pika.BasicProperties(delivery_mode=2))
+        
+        if test_result != json.dumps(payload):
+            logger.warning("Plugin has not published correct message, message should be:\n %s \n but has come out as: \n %s \n")
+            
 
         #if the result sent ok then log that everything should be fine
         if send_result:
