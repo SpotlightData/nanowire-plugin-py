@@ -615,7 +615,7 @@ def send_to_next_plugin(next_plugin, payload, output_channel):
         #send the result from this plugin to the next plugin in the pipeline
         send_result = output_channel.basic_publish("", next_plugin, json.dumps(payload), pika.BasicProperties(content_type='text/plain', delivery_mode=2))
         
-        test_result = output_channel.basic_get("", next_plugin, True)        
+        test_result = output_channel.basic_get(callback=return_value, queue=next_plugin, no_ack=True)        
         
         if test_result != json.dumps(payload):
             logger.warning("Plugin has not published correct message, message should be:\n %s \n but has come out as: \n %s \n")
@@ -631,6 +631,10 @@ def send_to_next_plugin(next_plugin, payload, output_channel):
     else:
         logger.warning("There is no next plugin, if this is not a storage plugin you may loose analysis data")
 
+
+def return_value(ch, method, props, body):
+    
+    return body
 
 
 def clean_function_output(result, payload):
