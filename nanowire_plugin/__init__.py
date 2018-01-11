@@ -477,7 +477,11 @@ def send(name, payload, input_channel, output_channel, method, properties, minio
 
     #now set the payload jsonld to be the plugin output, after ensuring that the output is
     # in EXACTLY the right format
-    payload["jsonld"] = clean_function_output(result, payload)
+    
+    out_jsonld = clean_function_output(result, payload)
+
+    if out_jsonld != None:
+        payload["jsonld"] = out_jsonld
 
     logger.info("finished running user code on %s"%payload["nmo"]["source"]["name"])
     
@@ -681,5 +685,7 @@ def clean_function_output(result, payload):
     else:
         result = None
         
-        
-    return result
+    if result != None:
+        return result
+    else:
+        return payload["jsonld"]
