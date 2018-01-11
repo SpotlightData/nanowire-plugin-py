@@ -144,6 +144,9 @@ class on_request_class():
             try:
                 payload = json.loads(data)
             except:
+                set_status(self.monitor_url, "Unknown", "Unknown", self.name, error="Messgae passed to %s is incomplete")
+                #remove the bad file from the queue
+                ch.basic_ack(method.delivery_tag)
                 logger.error("The end of the file may have been cut off by rabbitMQ, last 10 characters are: %s"%data[0:10])
                 raise Exception("Problem with payload, payload should be json serializeable. Payload is %s"%data)
                 
@@ -610,15 +613,15 @@ def send_to_next_plugin(next_plugin, payload, output_channel):
             )
         
         
-              
+        output_channel.confirm_delivery()
         
         #send the result from this plugin to the next plugin in the pipeline
         send_result = output_channel.basic_publish("", next_plugin, json.dumps(payload), pika.BasicProperties(content_type='text/plain', delivery_mode=2))
         
-        test_result = output_channel.basic_get(callback=return_value, queue=next_plugin, no_ack=True)        
+        #test_result = output_channel.basic_get(queue=next_plugin, no_ack=True)        
         
-        if test_result != json.dumps(payload):
-            logger.warning("Plugin has not published correct message, message should be:\n %s \n but has come out as: \n %s \n")
+        #if test_result != json.dumps(payload):
+        #    logger.warning("Plugin has not published correct message, message should be:\n %s \n but has come out as: \n %s \n")
             
 
         #if the result sent ok then log that everything should be fine
