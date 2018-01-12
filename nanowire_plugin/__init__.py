@@ -452,6 +452,7 @@ def send(name, payload, input_channel, output_channel, method, properties, minio
 
     try:
         #run the function that we're all here for
+        logger.info("Started running user code at %s"%str(datetime.datetime.now()))
         result = function(payload["nmo"], payload["jsonld"], url)
         err = 0
     except Exception as e:
