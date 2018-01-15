@@ -168,7 +168,9 @@ class on_request_class():
         #                 properties=pika.BasicProperties(correlation_id=props.correlation_id), body=str(response))
                                                          
                                                      
+def failed_to_grab():
     
+    logger.info("Failed to grab a message")
 
 
 def bind(function, name, version="1.0.0", pulserate=30):
@@ -180,13 +182,11 @@ def bind(function, name, version="1.0.0", pulserate=30):
     
     #check to see if the input function has the correct number of arguments
     if sys.version_info.major == 3:
-       
-        
+      
         if list(inspect.signature(function).parameters) != ['nmo', 'jsonld', 'url'] and list(inspect.signature(function).parameters) != ['self', 'nmo', 'jsonld', 'url']:
             raise Exception("Bound function must use argument names: [nmo, jsonld, url]. You have used %s"%list(inspect.signature(function).parameters))     
         
     elif sys.version_info.major == 2:
-        
         
         if inspect.getargspec(function)[0] != ['nmo', 'jsonld', 'url'] and inspect.getargspec(function)[0] != ['self', 'nmo', 'jsonld', 'url']:
             raise Exception("Bound function must use argument names: [nmo, jsonld, url]. You have used %s"%inspect.getargspec(function)[0])
@@ -210,8 +210,11 @@ def bind(function, name, version="1.0.0", pulserate=30):
 
     #set up pika connection channels between rabbitmq and python
     connection = pika.BlockingConnection(parameters)
+    timer_id = connection.add_timeout(60, failed_to_grab)
     input_channel = connection.channel()
     output_channel = connection.channel()
+    
+    output_channel.confirm_delivery()
 
     #setup the pacemaker
     pacemaker = heart_runner(connection)
@@ -617,8 +620,6 @@ def send_to_next_plugin(next_plugin, payload, output_channel):
             durable=True
             )
         
-        
-        output_channel.confirm_delivery()
         
         #send the result from this plugin to the next plugin in the pipeline
         send_result = output_channel.basic_publish("", next_plugin, json.dumps(payload), pika.BasicProperties(content_type='text/plain', delivery_mode=2))
