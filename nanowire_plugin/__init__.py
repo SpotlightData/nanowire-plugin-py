@@ -168,7 +168,9 @@ class on_request_class():
         #                 properties=pika.BasicProperties(correlation_id=props.correlation_id), body=str(response))
                                                          
                                                      
-def failed_to_grab():
+def failed_to_grab(method):
+    
+    logger.info(str(method))
     
     logger.info("Failed to grab a message")
 
@@ -206,11 +208,13 @@ def bind(function, name, version="1.0.0", pulserate=30):
         port=int(environ["AMQP_PORT"]),
         credentials=pika.PlainCredentials(environ["AMQP_USER"], environ["AMQP_PASS"]),
         heartbeat=pulserate,
-        socket_timeout=10)
+        socket_timeout=10,
+        blocked_connection_timeout=120)
 
     #set up pika connection channels between rabbitmq and python
     connection = pika.BlockingConnection(parameters)
-    timer_id = connection.add_timeout(60, failed_to_grab)
+    #add something to stop the connection hanging when it's supposed to be grabbing
+    connection.add_on_connection_blocked_callback(failed_to_grab)
     input_channel = connection.channel()
     output_channel = connection.channel()
     
