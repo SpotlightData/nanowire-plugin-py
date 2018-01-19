@@ -168,9 +168,9 @@ class on_request_class():
         #                 properties=pika.BasicProperties(correlation_id=props.correlation_id), body=str(response))
                                                          
                                                      
-def failed_to_grab(method):
+def failed_to_grab():
     
-    logger.info(str(method))
+    raise Exception("REACHED TIMEOUT, ETHER BECAUSE THERE'S NOTHING ON THE QUEUE OR BECAUSE THE CONNECTION WAS HANGING AGAIN")
     
     logger.info("Failed to grab a message")
 
@@ -213,11 +213,17 @@ def bind(function, name, version="1.0.0", pulserate=30):
 
     #set up pika connection channels between rabbitmq and python
     connection = pika.BlockingConnection(parameters)
-    #add something to stop the connection hanging when it's supposed to be grabbing
+    
+    #This is an attempt to fix the problem with basic_consume hanging on consume sometimes. THIS
+    #IS AN EXPEREMENT AND MAY WELL NOT WORK!!!!!    
+    #connection.add_timeout(900, failed_to_grab)
+    
+    #add something to stop the connection hanging when it's supposed to be grabbing. This does not work
     connection.add_on_connection_blocked_callback(failed_to_grab)
     input_channel = connection.channel()
     output_channel = connection.channel()
     
+    #The confirm delivery on the input channel is an attempt to fix the hanging problem. IT MIGHT NOT WORK!!!
     input_channel.confirm_delivery()
     output_channel.confirm_delivery()
 
@@ -266,7 +272,7 @@ def bind(function, name, version="1.0.0", pulserate=30):
     #The inactivity timeout might cause the pod to die and restart every 15 minutes when the queue is empty. This is
     #an attempt to fix the problem with the system hanging on basic_consume THIS IS EXPEREMENTAL AT THE MOMENT, IT MIGHT
     #NOT FIX THE PROBLEM!!!!
-    input_channel.basic_consume(requester.on_request, queue=name, no_ack=False, inactivity_timeout=900)
+    input_channel.basic_consume(requester.on_request, queue=name, no_ack=False)
     
     #print("Created basic consumer")
     logger.info("Created basic consumer")
