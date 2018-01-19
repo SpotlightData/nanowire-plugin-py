@@ -65,9 +65,9 @@ class heart_runner():
                     #This is a command to run a heartbeat. It has a limit of 10
                     #seconds becuase it kept hanging here due to pika not being fully thread
                     #safe
-                    self.connection.process_data_events(time_limit=10)
+                    self.connection.process_data_events()
                     #This is how often to run the pacemaker
-                    time.sleep(1)
+                    time.sleep(0.1)
 
 
 
