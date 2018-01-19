@@ -62,8 +62,12 @@ class heart_runner():
     
             while True:
                 with self.internal_lock:
-                    self.connection.process_data_events()
-                    time.sleep(0.1)
+                    #This is a command to run a heartbeat. It has a limit of 10
+                    #seconds becuase it kept hanging here due to pika not being fully thread
+                    #safe
+                    self.connection.process_data_events(time_limit=10)
+                    #This is how often to run the pacemaker
+                    time.sleep(1)
 
 
 
@@ -195,6 +199,8 @@ def bind(function, name, version="1.0.0", pulserate=30):
 
     #set up the logging
     logger.setLevel(logging.DEBUG)
+    
+    logger.info("Running with pika version %s"%str(pika.__version__))
 
     #write to screen to ensure logging is working ok
     #print "Initialising nanowire lib, this is a print"
@@ -215,7 +221,7 @@ def bind(function, name, version="1.0.0", pulserate=30):
     connection = pika.BlockingConnection(parameters)
     
     #This is an attempt to fix the problem with basic_consume hanging on consume sometimes. THIS
-    #IS AN EXPEREMENT AND MAY WELL NOT WORK!!!!!    
+    #IS AN EXPEREMENT AND MAY WELL NOT WORK!!!!!
     connection.add_timeout(900, failed_to_grab)
     
     #add something to stop the connection hanging when it's supposed to be grabbing. This does not work
