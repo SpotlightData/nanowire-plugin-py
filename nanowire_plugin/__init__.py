@@ -216,7 +216,7 @@ def bind(function, name, version="1.0.0", pulserate=30):
     
     #This is an attempt to fix the problem with basic_consume hanging on consume sometimes. THIS
     #IS AN EXPEREMENT AND MAY WELL NOT WORK!!!!!    
-    #connection.add_timeout(900, failed_to_grab)
+    connection.add_timeout(900, failed_to_grab)
     
     #add something to stop the connection hanging when it's supposed to be grabbing. This does not work
     connection.add_on_connection_blocked_callback(failed_to_grab)
