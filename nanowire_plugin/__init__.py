@@ -218,6 +218,7 @@ def bind(function, name, version="1.0.0", pulserate=30):
     input_channel = connection.channel()
     output_channel = connection.channel()
     
+    input_channel.confirm_delivery()
     output_channel.confirm_delivery()
 
     #setup the pacemaker
@@ -262,7 +263,10 @@ def bind(function, name, version="1.0.0", pulserate=30):
     #set the queue length to one
     input_channel.basic_qos(prefetch_count=1)    
     
-    input_channel.basic_consume(requester.on_request, queue=name, no_ack=False)
+    #The inactivity timeout might cause the pod to die and restart every 15 minutes when the queue is empty. This is
+    #an attempt to fix the problem with the system hanging on basic_consume THIS IS EXPEREMENTAL AT THE MOMENT, IT MIGHT
+    #NOT FIX THE PROBLEM!!!!
+    input_channel.basic_consume(requester.on_request, queue=name, no_ack=False, inactivity_timeout=900)
     
     #print("Created basic consumer")
     logger.info("Created basic consumer")
