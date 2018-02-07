@@ -17,7 +17,7 @@ from os.path import join
 import inspect
 
 import threading
-
+import signal
 
 import time
 import sys
@@ -37,6 +37,26 @@ else:
 #set up the logger globally
 logger = logging.getLogger("nanowire-plugin")
 
+
+
+
+class pacemaker_timeout:
+    
+    def __init__(self, seconds=1, error_message='Timeout'):
+        
+        self.seconds = seconds
+        self.error_message = error_message
+        
+    def handle_timeout(self, signum, frame):
+        
+        raise TimeoutError(self.error_message)
+        
+    def __enter__(self):
+        signal.signal(signal.SIGALRM, self.handle_timeout)
+        signal.alarm(self.seconds)
+        
+    def __exit__(self, type, value, traceback):
+        signal.alarm(0)
 
 
 class heart_runner():
@@ -62,12 +82,15 @@ class heart_runner():
     
             while True:
                 with self.internal_lock:
-                    #This is a command to run a heartbeat. It has a limit of 10
-                    #seconds becuase it kept hanging here due to pika not being fully thread
-                    #safe
-                    self.connection.process_data_events()
+                    #This is a command to run a heartbeat. I have used the signal library
+                    #to add a 10 second timeout because it kept hanging.
+                    with pacemaker_timeout(seconds=10, error_message="Pacemaker has timed out"):
+                        
+                        self.connection.process_data_events()
+                        
+                    time.sleep(1)
                     #This is how often to run the pacemaker
-                    time.sleep(0.1)
+                    
 
 
 
@@ -222,10 +245,10 @@ def bind(function, name, version="1.0.0", pulserate=30):
     
     #This is an attempt to fix the problem with basic_consume hanging on consume sometimes. THIS
     #IS AN EXPEREMENT AND MAY WELL NOT WORK!!!!!
-    connection.add_timeout(900, failed_to_grab)
+    #connection.add_timeout(120, failed_to_grab)
     
     #add something to stop the connection hanging when it's supposed to be grabbing. This does not work
-    connection.add_on_connection_blocked_callback(failed_to_grab)
+    #connection.add_on_connection_blocked_callback(failed_to_grab)
     input_channel = connection.channel()
     output_channel = connection.channel()
     
