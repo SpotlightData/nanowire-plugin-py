@@ -24,6 +24,7 @@ import sys
 import pika
 from minio import Minio
 import datetime
+from multiprocessing import Process
 #from minio.error import AccessDenied
 
 #import the relavant version of urllib depending on the version of python we are
@@ -40,24 +41,19 @@ logger = logging.getLogger("nanowire-plugin")
 
 
 
-class pacemaker_timeout:
-    
-    def __init__(self, seconds=1, error_message='Timeout'):
-        
-        self.seconds = seconds
-        self.error_message = error_message
-        
-    def handle_timeout(self, signum, frame):
-        
-        raise TimeoutError(self.error_message)
-        
-    def __enter__(self):
-        signal.signal(signal.SIGALRM, self.handle_timeout)
-        signal.alarm(self.seconds)
-        
-    def __exit__(self, type, value, traceback):
-        signal.alarm(0)
+#trying another wacky plan to try and fix the hanging problem
 
+def run_with_timeout(func, args, kwargs, t):
+    
+    
+    p = Process(target=func, args=args, kwargs=kwargs)
+    p.start()
+    p.join(t)
+    if p.is_alive():
+        p.terminate()
+        return False
+        
+    return True
 
 class heart_runner():
     
@@ -84,10 +80,22 @@ class heart_runner():
                 with self.internal_lock:
                     #This is a command to run a heartbeat. I have used the signal library
                     #to add a 10 second timeout because it kept hanging.
-                    with pacemaker_timeout(seconds=10, error_message="Pacemaker has timed out"):
+                    #with pacemaker_timeout(seconds=10, error_message="Pacemaker has timed out"):
                         
-                        self.connection.process_data_events()
-                        
+                    #    self.connection.process_data_events()
+                    
+                    
+                    #We will do nothing if the pacemaker pulse didn't work. Too
+                    #many failures leads to a heart attack and then the pod
+                    #should restart on its own. Give each pacemaker pulse 
+                    #10 seconds to do its thing, any more than that and we assume
+                    #a hang
+                    
+                    state = run_with_timeout(self.connection.process_data_events, (), {}, 10)
+                    
+                    if not state:
+                        logger.warning("THE PACEMAKER DID NOT MANAGE TO SEND A HEARTBEAT, RETRYING")
+                     
                     time.sleep(1)
                     #This is how often to run the pacemaker
                     
@@ -98,7 +106,6 @@ class heart_runner():
 class on_request_class():
     
     def __init__(self, function, name, minio_client, output_channel, monitor_url):
-        
         
         #check to see if the input function has the correct number of arguments. This changes depending on whether we're working
         #in python2 or python3 because apparantly unit testing is super important and my time isn't
@@ -129,12 +136,9 @@ class on_request_class():
         if not str(type(output_channel)) == "<class 'pika.adapters.blocking_connection.BlockingChannel'>" and "mock" not in str(output_channel).lower():
             raise Exception("output channel should be a pika blocking connection channel it is actually %s"%output_channel)
         
-
         if not output_channel.is_open:
             raise Exception("Output channel is closed")
        
-            
-        
         self.name = name
         self.function = function
         self.minio_client = minio_client
@@ -148,13 +152,11 @@ class on_request_class():
         if not ch.is_open:
             raise Exception("Input channel is closed")
 
-
         #check the body is a byte string
         if not isinstance(body, bytes):
             raise Exception("The body data should be a byte stream, it is actually %s, %s"%(body, type(body)))
 
         
-
         #set up logging inside the server functions
         logger.setLevel(logging.DEBUG)
 
@@ -163,7 +165,6 @@ class on_request_class():
         if data == None:
             
             logger.info("Empty input")
-            #print("Empty input")
             
         else:
 
@@ -171,19 +172,16 @@ class on_request_class():
             try:
                 payload = json.loads(data)
             except:
-                set_status(self.monitor_url, "Unknown", "Unknown", self.name, error="Messgae passed to %s is incomplete")
+                set_status(self.monitor_url, "Unknown", "Unknown", self.name, error="Message passed to %s is incomplete")
                 #remove the bad file from the queue
                 ch.basic_ack(method.delivery_tag)
                 logger.error("The end of the file may have been cut off by rabbitMQ, last 10 characters are: %s"%data[0:10])
                 raise Exception("Problem with payload, payload should be json serializeable. Payload is %s"%data)
                 
             #check that the payload is valid. If not this function returns the errors that tell the user why it's not
-            #valid                
+            #valid
             validate_payload(payload)
-            
-
-
-
+    
         returned = send(self.name, payload, ch, self.output_channel, method, props, self.minio_client, self.monitor_url, self.function)
         
 
@@ -691,6 +689,9 @@ def return_value(ch, method, props, body):
 
 def clean_function_output(result, payload):
     
+    if payload == None:
+        
+        raise Exception("An empty payload has been receved")
         
     #if the plugin has not produced a dictionary then we look to replace it with
     #something more sensible
