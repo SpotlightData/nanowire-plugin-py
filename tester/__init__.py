@@ -30,6 +30,8 @@ import pika
 
 from threading import Thread
 
+import traceback
+
 
 if sys.version_info.major == 3:
     from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -656,7 +658,7 @@ class test_on_request_class(unittest.TestCase):
         
         
         
-    def test_bad_function_input_names(self):
+    def test_bad_function_input_names_on_request(self):
         
         name = "example name"
         
@@ -673,9 +675,8 @@ class test_on_request_class(unittest.TestCase):
 
         with self.assertRaises(Exception) as context:
             nwp.on_request_class(bad_test_function_wrong_args, name, minio_client, output_channel, monitor_url)
-        
-
-        self.assertTrue("Bound function must use argument names: [nmo, jsonld, url]. You have used " in str(context.exception))
+            
+        self.assertTrue("Bound function must use argument names: ['nmo', 'jsonld', 'url']. You have used" in str(context.exception))
 
 
     def test_bad_function_wrong_args_number(self):
@@ -820,10 +821,13 @@ class test_clean_function_output(unittest.TestCase):
         result = None        
         
         payload = None        
-        
-        out = nwp.clean_function_output(result, payload)
-        
-        self.assertTrue(out == None)
+                
+        with self.assertRaises(Exception) as context:
+            nwp.clean_function_output(result, payload)
+
+
+        self.assertTrue("An empty payload has been receved" in str(context.exception))
+    
         
         
     def test_no_payload_no_jsonld_result(self):
@@ -835,8 +839,6 @@ class test_clean_function_output(unittest.TestCase):
         
         payload = None
         
-        out = nwp.clean_function_output(result, payload)
-        
         target = {}
         target = {}
         target["@context"] = "http://schema.org/"
@@ -844,7 +846,12 @@ class test_clean_function_output(unittest.TestCase):
         target["@graph"] = []
         
 
-        self.assertTrue(target==out)
+        with self.assertRaises(Exception) as context:
+            nwp.clean_function_output(result, payload)
+
+
+        self.assertTrue("An empty payload has been receved" in str(context.exception))
+    
         
         
         
@@ -858,11 +865,13 @@ class test_clean_function_output(unittest.TestCase):
         
         payload = None
         
-        out = nwp.clean_function_output(jsonld, payload)
         
-      
-        
-        self.assertTrue(jsonld==out)
+        with self.assertRaises(Exception) as context:
+            nwp.clean_function_output(jsonld, payload)
+
+
+        self.assertTrue("An empty payload has been receved" in str(context.exception))
+    
         
         
         
@@ -1748,9 +1757,6 @@ class test_sendToNextPlugin(unittest.TestCase):
         
         with self.assertRaises(Exception) as context:
             nwp.send_to_next_plugin(next_plugin, payload, output_channel)
-        print("$$$$$$$$$$$$$$$$$$$$$$$$")
-        print(context.exception)
-        print("$$$$$$$$$$$$$$$$$$$$$$$$")
             
         self.assertTrue("Output channel is closed" in str(context.exception))   
     
@@ -2590,8 +2596,9 @@ class unit_test_on_request_function(unittest.TestCase):
         status = exampleOn_request.on_request(ch, method, props, body)
 
         self.assertTrue(status==None)
-        
-    def test_bad_body(self):
+    
+    @patch('nanowire_plugin.set_status')
+    def test_bad_body(self, MagicMock):
         
         
         name = "example_on_request_plugin_name1"
@@ -2620,11 +2627,12 @@ class unit_test_on_request_function(unittest.TestCase):
         props = ""
         
         body = "Oh noes, this isn't a json!!!".encode("utf-8")
-
+        
         
         with self.assertRaises(Exception) as context:
+        #print("mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm")
             exampleOn_request.on_request(ch, method, props, body)
-            
+        
         #check we got the right exception
         self.assertTrue("Problem with payload, payload should be json serializeable. Payload is " in str(context.exception))
         
@@ -3203,6 +3211,9 @@ class mocked_channel():
         
         return None
         
+    def confirm_delivery(self):
+        time.sleep(0.1)
+        
 
 
 class mocked_connection_builder():
@@ -3217,6 +3228,11 @@ class mocked_connection_builder():
         return mocked_channel(self.queue_list)
         
 
+
+def sleeper1():
+    time.sleep(1)
+
+
 class test_bind(unittest.TestCase):
 
     @patch('pika.BlockingConnection')
@@ -3224,7 +3240,7 @@ class test_bind(unittest.TestCase):
     
         print("testing good bind function call")
         
-        
+    
         name = "passing_bind_function"
         #with patch("pika.BlockingConnection", return_value=mocked_connection_builder()):
         
@@ -3249,17 +3265,15 @@ class test_bind(unittest.TestCase):
         channel.basic_publish = queuer.sim_basic_publish
         channel.basic_consume = queuer.sim_basic_consume
         channel.queue_declare = queuer.sim_queue_declare
+        channel.confirm_delivery = sleeper1
         
-
-
-#mock_bind_thread.exit()
     def test_bad_function_input_names(self):
         
         name = "example_name_bad_function_inputs_bind"
         
         with self.assertRaises(Exception) as context:
             nwp.bind(bad_test_function_wrong_args, name)
-
+            
         self.assertTrue("Bound function must use argument names: [nmo, jsonld, url]. You have used" in str(context.exception))
     
     def test_bad_function_input_no(self):
@@ -3268,8 +3282,10 @@ class test_bind(unittest.TestCase):
         
         with self.assertRaises(Exception) as context:
             nwp.bind(bad_test_function_wrong_no_args, name)
+            
+            #lt.log_debug(logger, str(context.exception))
 
-        self.assertTrue("Bound function must take 3 arguments: nmo, jsonld and url" in str(context.exception))
+        self.assertTrue("Bound function must use argument names: [nmo, jsonld, url]. You have used" in str(context.exception))
         
         
     def test_bad_name(self):
@@ -3282,8 +3298,6 @@ class test_bind(unittest.TestCase):
         self.assertTrue("Bound function must use argument names: [nmo, jsonld, url]. You have used" in str(context.exception))
         
         
-
-
 class test_heartrunner(unittest.TestCase):
     
     def test_pacemaker(self):
@@ -3312,6 +3326,22 @@ class test_heartrunner(unittest.TestCase):
             
         self.assertTrue("Heart runner's connection to rabbitmq should be open, is actually closed" in str(context.exception))
 
+    def test_auto_timeout(self):
+        
+        def sleeper():
+            time.sleep(11)
+        
+        connection=MagicMock()
+        connection.is_open = True
+        connection.process_data_events = sleeper
+        
+        with self.assertRaises(Exception) as context:
+            
+            runner = nwp.heart_runner(connection)
+            
+            runner._process_data_events()
+        
+        self.assertTrue("Pacemaker has timed out" in str(context.exception))
 
 
 ###############################
