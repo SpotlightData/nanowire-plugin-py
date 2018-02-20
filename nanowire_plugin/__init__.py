@@ -17,7 +17,6 @@ from os.path import join
 import inspect
 
 import threading
-import signal
 
 import time
 import sys
@@ -25,87 +24,29 @@ import pika
 from minio import Minio
 import datetime
 from multiprocessing import Process
+
+from queue import Queue
 #from minio.error import AccessDenied
 
 #import the relavant version of urllib depending on the version of python we are
 if sys.version_info.major == 3:
     import urllib
+    import _thread as thread
 elif sys.version_info.major == 2:
     import urllib2
+    import thread
 else:
     import urllib
 
 #set up the logger globally
 logger = logging.getLogger("nanowire-plugin")
 
-
-
-
 #trying another wacky plan to try and fix the hanging problem
-
-def run_with_timeout(func, args, kwargs, t):
-    
-    
-    p = Process(target=func, args=args, kwargs=kwargs)
-    p.start()
-    p.join(t)
-    if p.is_alive():
-        p.terminate()
-        return False
-        
-    return True
-
-class heart_runner():
-    
-    def __init__(self, connection):
-        
-        if "blockingconnection" not in str(connection).lower() and "mock" not in str(connection).lower():
-            raise Exception("Heartbeat runner requires a connection to rabbitmq as connection, actually has %s, a %s"%(str(connection), type(connection)))
-        
-        if connection.is_open == False:
-            raise Exception("Heart runner's connection to rabbitmq should be open, is actually closed")
-        
-        self.connection = connection
-        self.internal_lock = threading.Lock()
-    
-
-    def _process_data_events(self):
-            """Check for incoming data events.
-            We do this on a thread to allow the flask instance to send
-            asynchronous requests.
-            It is important that we lock the thread each time we check for events.
-            """
-    
-            while True:
-                with self.internal_lock:
-                    #This is a command to run a heartbeat. I have used the signal library
-                    #to add a 10 second timeout because it kept hanging.
-                    #with pacemaker_timeout(seconds=10, error_message="Pacemaker has timed out"):
-                        
-                    #    self.connection.process_data_events()
-                    
-                    
-                    #We will do nothing if the pacemaker pulse didn't work. Too
-                    #many failures leads to a heart attack and then the pod
-                    #should restart on its own. Give each pacemaker pulse 
-                    #10 seconds to do its thing, any more than that and we assume
-                    #a hang
-                    
-                    state = run_with_timeout(self.connection.process_data_events, (), {}, 10)
-                    
-                    if not state:
-                        logger.warning("THE PACEMAKER DID NOT MANAGE TO SEND A HEARTBEAT, RETRYING")
-                     
-                    time.sleep(1)
-                    #This is how often to run the pacemaker
-                    
-
-
 
 #create a class so we can feed things into the on_request function
 class on_request_class():
     
-    def __init__(self, function, name, minio_client, output_channel, monitor_url):
+    def __init__(self, connection, function, name, minio_client, output_channel, monitor_url, input_queue):
         
         #check to see if the input function has the correct number of arguments. This changes depending on whether we're working
         #in python2 or python3 because apparantly unit testing is super important and my time isn't
@@ -140,11 +81,15 @@ class on_request_class():
             raise Exception("Output channel is closed")
        
         self.name = name
+        self.connection = connection
         self.function = function
         self.minio_client = minio_client
         self.monitor_url = monitor_url
         self.output_channel = output_channel
-        
+        self.input_queue = input_queue
+        #the alert queue is designed to check if the basic_consume is hanging
+        self.alert_queue = Queue()
+        self.process_queue = Queue()
 
     def on_request(self, ch, method, props, body):
         
@@ -159,7 +104,7 @@ class on_request_class():
         
         #set up logging inside the server functions
         logger.setLevel(logging.DEBUG)
-
+        
         data = body.decode("utf-8")
 
         if data == None:
@@ -170,7 +115,7 @@ class on_request_class():
 
             #try to load the payload into a dictionary
             try:
-                payload = json.loads(data)
+                self.payload = json.loads(data)
             except:
                 set_status(self.monitor_url, "Unknown", "Unknown", self.name, error="Message passed to %s is incomplete")
                 #remove the bad file from the queue
@@ -180,29 +125,81 @@ class on_request_class():
                 
             #check that the payload is valid. If not this function returns the errors that tell the user why it's not
             #valid
-            validate_payload(payload)
-    
-        returned = send(self.name, payload, ch, self.output_channel, method, props, self.minio_client, self.monitor_url, self.function)
+            validate_payload(self.payload)
+            
+
+        #handle the function call here!!!
+        proc_thread = threading.Thread(target=self.run_processing_thread)
+        proc_thread.setDaemon(True)
+        proc_thread.start()
+        
+        processing = True
+        
+        pacemaker_pluserate = 10        
+        
+        #set up t=0 for the heartbeats
+        beat_time = time.time()
+        
+        #wait here for the process to finish
+        while processing:
+            
+            time_since_last_heartbeat = time.time() - beat_time
+            #perform the heartbeat every n seconds
+            if time_since_last_heartbeat >= pacemaker_pluserate:
+                self.connection.process_data_events()
+                
+                
+                beat_time = time.time()
+                time_since_last_heartbeat = 0
+            
+            messages = self.process_queue.qsize()
+            
+            if messages == 1:
+                try:
+                    output = self.process_queue.get_nowait()
+                except:
+                    output = 'Result did not get put onto the processing queue'
+
+                processing = False
+            
+            elif messages > 1:
+                raise Exception("Something has gone wrong, there are multiple messages on the queue: %s"%str(self.process_queue.queue))
+        
+        
+        #run the send command with a 2 minute timeout
+        send(self.name, self.payload, output, ch, self.output_channel, method, self.minio_client, self.monitor_url)
+        #returned = send(self.name, payload, ch, self.output_channel, method, props, self.minio_client, self.monitor_url, self.function)
         
 
         logger.info("Finished running user code at %s"%str(datetime.datetime.now()))
-        logger.info("returned, %s"%returned)
         logger.info("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
-        #ch.basic_publish(exchange='',
-        #                 routing_key=self.name,
-        #                 properties=pika.BasicProperties(correlation_id=props.correlation_id), body=str(response))
-                                                         
-                                                     
-def failed_to_grab():
-    
-    raise Exception("REACHED TIMEOUT, ETHER BECAUSE THERE'S NOTHING ON THE QUEUE OR BECAUSE THE CONNECTION WAS HANGING AGAIN")
-    
-    logger.info("Failed to grab a message")
 
 
-def bind(function, name, version="1.0.0", pulserate=30):
+    def run_processing_thread(self):
+        
+        logger.info("RUNNING PROCESSING THREAD")
+        
+        nmo = self.payload['nmo']
+        jsonld = self.payload['jsonld']
+        #pull the url from minio
+        url = get_url(self.payload, self.minio_client)
+        #************** There needs to be some way of getting the url before we hit this
+        
+        try:
+            result = self.function(nmo, jsonld, url)
+            
+        except:
+            result = traceback.format_exc()
+        
+        self.process_queue.put_nowait(result)
+        
+        
+        
+
+def bind(function, name, version="1.0.0", pulserate=25):
     """binds a function to the input message queue"""
     
+    #time.sleep(120)
     
     if not isinstance(name, str):
         raise Exception("plugin name should be a string, it is actually %s"%name)
@@ -236,32 +233,20 @@ def bind(function, name, version="1.0.0", pulserate=30):
         credentials=pika.PlainCredentials(environ["AMQP_USER"], environ["AMQP_PASS"]),
         heartbeat=pulserate,
         socket_timeout=10,
+        connection_attempts=1,
+        retry_delay = 5,
         blocked_connection_timeout=120)
 
     #set up pika connection channels between rabbitmq and python
     connection = pika.BlockingConnection(parameters)
     
-    #This is an attempt to fix the problem with basic_consume hanging on consume sometimes. THIS
-    #IS AN EXPEREMENT AND MAY WELL NOT WORK!!!!!
-    #connection.add_timeout(120, failed_to_grab)
-    
     #add something to stop the connection hanging when it's supposed to be grabbing. This does not work
-    #connection.add_on_connection_blocked_callback(failed_to_grab)
     input_channel = connection.channel()
     output_channel = connection.channel()
     
     #The confirm delivery on the input channel is an attempt to fix the hanging problem. IT MIGHT NOT WORK!!!
     input_channel.confirm_delivery()
     output_channel.confirm_delivery()
-
-    #setup the pacemaker
-    pacemaker = heart_runner(connection)
-
-    #set up this deamon thread in order to avoid everything dying due to a heartbeat timeout
-    thread = threading.Thread(target=pacemaker._process_data_events)
-    thread.setDaemon(True)
-    thread.start()
-
 
     #set up the minio client
     minio_client = Minio(
@@ -287,23 +272,37 @@ def bind(function, name, version="1.0.0", pulserate=30):
 
     logger.info("consuming from %s"%name)
 
-    input_channel.queue_declare(name, durable=True)
-
+    input_queue = input_channel.queue_declare(name, durable=True)
+    
     #all the stuff that needs to be passed into the callback function is stored
     #in this object so that it can be easily passed through
-    requester = on_request_class(function, name, minio_client, output_channel, monitor_url)
+    requester = on_request_class(connection, function, name, minio_client, output_channel, monitor_url, input_queue)
     
     #set the queue length to one
     input_channel.basic_qos(prefetch_count=1)    
     
-    #The inactivity timeout might cause the pod to die and restart every 15 minutes when the queue is empty. This is
-    #an attempt to fix the problem with the system hanging on basic_consume THIS IS EXPEREMENTAL AT THE MOMENT, IT MIGHT
-    #NOT FIX THE PROBLEM!!!!
+    #set up the function for running the users code on the input message
     input_channel.basic_consume(requester.on_request, queue=name, no_ack=False)
+    
+    
+    #thread = threading.Thread(target=requester.countdown_timer.begin_countdown)
+    #thread.setDaemon(True)
+    #thread.start()
     
     #print("Created basic consumer")
     logger.info("Created basic consumer")
     #print("ENTERING THE FUNCTION")
+    '''
+    logger.info("*****************************************")
+    logger.info(dir(eg_queue))
+    
+    #This is the function that should let us know what we're looking at
+    logger.info(eg_queue.method.message_count)
+    logger.info("*****************************************")
+    '''
+    
+    #start the countdown to make sure the first consume does not hang
+    
         
     input_channel.start_consuming()
     
@@ -443,7 +442,7 @@ def set_status(monitor_url, job_id, task_id, name, error=0):
 
 
 
-def send(name, payload, input_channel, output_channel, method, properties, minio_client, monitor_url, function):
+def send(name, payload, output, input_channel, output_channel, method, minio_client, monitor_url):
     """unwraps a message and calls the user function"""   
     
     #check the plugin name
@@ -479,33 +478,27 @@ def send(name, payload, input_channel, output_channel, method, properties, minio
     #check the payload
     validate_payload(payload)
     
-    
     #log some info about what the send function has been given
     logger.info("consumed message")
     logger.info("channel %s"%input_channel)
     logger.info("method %s"%method)
-    logger.info("properties %s"%properties)
     
-    [next_plugin, url] = inform_monitor(payload, name, monitor_url, minio_client)
+    next_plugin= inform_monitor(payload, name, monitor_url, minio_client)
 
 
     #python2 has a nasty habit of converting things to unicode so this forces that behaviour out
     if str(type(next_plugin)) == "<type 'unicode'>":
         next_plugin = str(next_plugin)
-
-
-    try:
-        #run the function that we're all here for
-        logger.info("Started running user code at %s"%str(datetime.datetime.now()))
-        result = function(payload["nmo"], payload["jsonld"], url)
+        
+        
+    if isinstance(output, str):
+        err = output
+    elif isinstance(output, dict):
         err = 0
-    except Exception as e:
-        result = None
-        err = traceback.format_exc()
-        logger.info("Sending exception to monitor: %s"%str(err))
-        
-        
-        
+    elif output == None:
+        err = "NO OUTPUT WAS RETURNED"
+
+       
     try:
         set_status(monitor_url,
                    payload["nmo"]["job"]["job_id"],
@@ -523,7 +516,7 @@ def send(name, payload, input_channel, output_channel, method, properties, minio
     #now set the payload jsonld to be the plugin output, after ensuring that the output is
     # in EXACTLY the right format
     
-    out_jsonld = clean_function_output(result, payload)
+    out_jsonld = clean_function_output(output, payload)
 
     if out_jsonld != None:
         payload["jsonld"] = out_jsonld
@@ -542,6 +535,27 @@ def send(name, payload, input_channel, output_channel, method, properties, minio
     }
 
 
+def get_url(payload, minio_client):
+    
+    #create the path to the target in minio
+    path = join(
+        payload["nmo"]["task"]["task_id"],
+        "input",
+        "source",
+        payload["nmo"]["source"]["name"])
+    
+    #set the url of the file being examined
+    try:
+        minio_client.stat_object(payload["nmo"]["job"]["job_id"], path)
+        
+        url = minio_client.presigned_get_object(payload["nmo"]["job"]["job_id"], path)
+        
+    #if we cant get the url from the monitor then we set it as None
+    except:
+        url = None
+    
+    return url
+
 def inform_monitor(payload, name, monitor_url, minio_client):
     
     if not isinstance(payload, dict):
@@ -553,8 +567,6 @@ def inform_monitor(payload, name, monitor_url, minio_client):
     if not isinstance(name, str):
         raise Exception("plugin name should be a string, it is actually: %s"%name)
         
-    
-    
     #set the system enviroment properties
     sys_env = [
         "AMQP_HOST",
@@ -584,38 +596,15 @@ def inform_monitor(payload, name, monitor_url, minio_client):
             payload["nmo"]["task"]["task_id"]))
     logger.info("Plugin number %s in pipeline"%plugin_no)
     
-    
     logger.info("monitor url is: %s"%monitor_url)
     logger.info("filename is %s"%payload["nmo"]["source"]["name"])    
     #Inform the monitor as to where we are. If we can't then list a series of
     #warnings
     
-                       
-
     #if this is the final plugin in the process send a log stating as such
     next_plugin = get_next_plugin(name, payload["nmo"]["job"]["workflow"])
     if next_plugin is None:
         logger.info("this is the final plugin: %s"%payload["nmo"]["job"]["job_id"])
-
-    #create the path to the target in minio
-    path = join(
-        payload["nmo"]["task"]["task_id"],
-        "input",
-        "source",
-        payload["nmo"]["source"]["name"])
-
-
-    #set the url of the file being examined
-    try:
-        minio_client.stat_object(payload["nmo"]["job"]["job_id"], path)
-        
-        url = minio_client.presigned_get_object(payload["nmo"]["job"]["job_id"], path)
-        
-    #if we cant get the url from the monitor then we set it as None
-    except Exception as exp:
-        url = None
-
-        
 
     # calls the user function to mutate the JSON-LD data
     if "env" in payload["nmo"]["job"]["workflow"][plugin_no]:
@@ -631,7 +620,7 @@ def inform_monitor(payload, name, monitor_url, minio_client):
             environ[ename] = evalue
             
             
-    return [next_plugin, url]
+    return next_plugin
     
     
 def send_to_next_plugin(next_plugin, payload, output_channel):
