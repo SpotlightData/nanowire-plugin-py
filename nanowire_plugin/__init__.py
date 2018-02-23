@@ -379,16 +379,16 @@ def set_status(monitor_url, job_id, task_id, name, error=0):
     """sends a POST request to the monitor to notify it of task position"""
     
     if not isinstance(monitor_url, str):
-        raise Exception("URL should be a string it is %s"%monitor_url)
+        raise Exception("URL should be a string it is %s, a %s"%(str(monitor_url), str(type(monitor_url))))
     
     if not isinstance(job_id, str):
-        raise Exception("job_id should be a string, it is %s"%job_id)
+        raise Exception("job_id should be a string, it is %s, a %s"%(str(job_id), str(type(job_id))))
     
     if not isinstance(task_id, str):
-        raise Exception("task_id should be a string, it is %s"%task_id)
+        raise Exception("task_id should be a string, it is %s, a %s"%(str(task_id), str(type(task_id))))
     
     if not isinstance(name, str):
-        raise Exception("plugin name should be a string, it is %s"%name)
+        raise Exception("plugin name should be a string, it is %s, a %s"%(str(name), str(type(name))))
     
     if error != 0:
         payload=json.dumps({
