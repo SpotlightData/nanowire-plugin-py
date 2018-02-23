@@ -326,8 +326,14 @@ def validate_payload(payload):
 
     if "task" not in payload["nmo"]:
         raise Exception("No task in nmo \nnmo is %s"%payload["nmo"])
-                
-    if "jsonld" not in payload:
+    
+    try:
+        isGroup = payload['nmo']['source']['misc']['isGroup']    
+    except:
+        isGroup = False
+        
+        
+    if "jsonld" not in payload and not isGroup:
         raise Exception("No jsonld in payload \nPayload is:- %s"%payload)
         
 
@@ -1189,7 +1195,7 @@ class group_on_request_class():
                 
             #check that the payload is valid. If not this function returns the errors that tell the user why it's not
             #valid
-            validate_group_payload(self.payload)
+            validate_payload(self.payload)
             
 
         #handle the function call here!!!
@@ -1301,19 +1307,3 @@ class group_on_request_class():
         #put our result onto the queue so that it can be sent through the system
         self.process_queue.put_nowait(result)
         
-
-def validate_group_payload(payload):
-    """ensures payload includes the required metadata and this plugin is in there"""
-
-    if not isinstance(payload, dict):
-        raise Exception("payload is a %s, not a dictionary"%type(payload))
-
-    if "nmo" not in payload:
-        raise Exception("No nmo in payload")
-
-    if "job" not in payload["nmo"]:
-        raise Exception("No job in nmo \nnmo is %s"%payload["nmo"])
-
-    if "task" not in payload["nmo"]:
-        raise Exception("No task in nmo \nnmo is %s"%payload["nmo"])
-
