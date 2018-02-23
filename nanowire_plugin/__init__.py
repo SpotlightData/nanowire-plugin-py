@@ -25,16 +25,18 @@ from minio import Minio
 import datetime
 from multiprocessing import Process
 
-from queue import Queue
+
 #from minio.error import AccessDenied
 
 #import the relavant version of urllib depending on the version of python we are
 if sys.version_info.major == 3:
     import urllib
     import _thread as thread
+    from queue import Queue
 elif sys.version_info.major == 2:
     import urllib2
     import thread
+    from Queue import Queue
 else:
     import urllib
 
@@ -198,8 +200,6 @@ class on_request_class():
 
 def bind(function, name, version="1.0.0", pulserate=25):
     """binds a function to the input message queue"""
-    
-    #time.sleep(120)
     
     if not isinstance(name, str):
         raise Exception("plugin name should be a string, it is actually %s"%name)
@@ -670,10 +670,6 @@ def send_to_next_plugin(next_plugin, payload, output_channel):
     else:
         logger.warning("There is no next plugin, if this is not a storage plugin you may loose analysis data")
 
-
-def return_value(ch, method, props, body):
-    
-    return body
 
 
 def clean_function_output(result, payload):
