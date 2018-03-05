@@ -7,7 +7,6 @@ Created on Wed Oct 25 10:11:44 2017
 
 #nanowire-plugin unit tests
 import os
-import copy
 import nanowire_plugin as nwp
 import unittest
 import sys
@@ -16,36 +15,35 @@ import sys
 import time
 import json
 
-from io import TextIOWrapper, BytesIO
-
 import logging
 #programs for setting up background servers to simulate nanowire
-import urllib
-import requests
+
 import socket
-import io
 
 from minio import Minio
 import pika
 
 from threading import Thread
 
-import traceback
+from minio import Minio
 
+import datetime
 
-if sys.version_info.major == 3:
-    from http.server import BaseHTTPRequestHandler, HTTPServer
+if sys.version_info.major >= 3:
+    from http.server import BaseHTTPRequestHandler, HTTPServer, SimpleHTTPRequestHandler
     from unittest.mock import MagicMock
     from unittest.mock import patch
     import queue as Queue
 elif sys.version_info.major == 2:
     import BaseHTTPServer
+    import SimpleHTTPServer
+    import SocketServer
     import mock
     from mock import MagicMock
     from mock import patch
     import Queue
-else:
-    import http.server
+
+import shutil
 
 import log_tools as lt
 
@@ -94,6 +92,12 @@ def simulated_next_plugin(ch, method, props, body):
     #have to convert to unicode for python2 because python2 is difficult
     print(data)
 
+class mock_pika_BlockingConnection():
+    
+    def __init__(self):
+        
+        self.is_open = True
+
 
 class sim_queues():
     
@@ -122,6 +126,47 @@ class sim_queues():
         if name not in self.queue_list.keys():
             
             self.queue_list[name] = Queue.LifoQueue()
+            
+            
+            
+            
+            
+class fake_minio_client():
+    
+    def __init__(self):
+        
+        self.open = True
+        
+    def bucket_exists(self, example_bucket_name):
+        return True
+        
+    def put_object(self, bucket_name, save_name, file_data, file_size):
+        pass
+    
+    def set_app_info(self, name, version):
+        pass
+
+class test_minio_tool_initialise(unittest.TestCase):
+    
+    
+    def test_fine(self):
+        
+        test_case = Minio('test')
+        
+        test_tool = nwp.Minio_tool(test_case)
+        
+        self.assertTrue('nanowire_plugin.Minio_tool' in str(type(test_tool)))
+        
+        
+    def test_bad_minio_client(self):
+        
+        test_case = 'test'
+        
+        with self.assertRaises(Exception) as context:
+            nwp.Minio_tool(test_case)
+
+        self.assertTrue("Minio_tool requires a minio client to initialise, has actually been given" in str(context.exception))
+    
             
 ######################################
 ### Beginning of unit test classes ###
@@ -211,14 +256,47 @@ class test_validate_nmo(unittest.TestCase):
             nwp.validate_payload(bad_payload)
 
         self.assertTrue("No jsonld in payload" in str(context.exception))
+        
+        
+    def testNojsonldgroup(self):
+        
+        payload = {}
+        payload["url"] = None
+        payload["nmo"] = {}
+        payload["nmo"]["job"] = "test_job"
+        payload["nmo"]["task"] = "test_task"
+        payload['nmo']['source'] = {}
+        payload['nmo']['source']['misc'] = {}
+        payload['nmo']['source']['misc']['isGroup'] = True
+        
+        nwp.validate_payload(payload)
+        
+        self.assertTrue(True)
+        
+        
+    def testNojsonldnotgroup(self):
+        
+        payload = {}
+        payload["url"] = None
+        payload["nmo"] = {}
+        payload["nmo"]["job"] = "test_job"
+        payload["nmo"]["task"] = "test_task"
+        payload['nmo']['source'] = {}
+        payload['nmo']['source']['misc'] = {}
+        payload['nmo']['source']['misc']['isGroup'] = False
+        
+        with self.assertRaises(Exception) as context:
+            nwp.validate_payload(payload)
 
+        self.assertTrue("No jsonld in payload" in str(context.exception))
+        
 
 class testNextPlugin(unittest.TestCase):
     
     
     #result = nwp.get_next_plugin(name, workflow)
     
-    def testbadpluginname(self):
+    def test_badpluginname(self):
         
         name = 5
         
@@ -363,8 +441,6 @@ class testNextPlugin(unittest.TestCase):
 
 #test the get next plugin function
 class testGet_this_plugin(unittest.TestCase):
-    
-    
     
     def test_no_plugin(self):
         
@@ -514,9 +590,15 @@ class test_SetMonitor(unittest.TestCase):
         
         monitor_url = "http://localhost:" + str(mock_monitor.mock_server_port)
         
-        job_id = "1"
+        if sys.version_info.major >= 3:
         
-        task_id = "1"
+            job_id = "1"
+            task_id = "1"
+            
+        else:
+                    
+            job_id = u"1"
+            task_id = u"1"
         
         name = "example_plugin"
 
@@ -529,9 +611,15 @@ class test_SetMonitor(unittest.TestCase):
         
         monitor_url = "http://localhost:" + str(mock_monitor.mock_server_port)
         
-        job_id = "1"
+        if sys.version_info.major >= 3:
         
-        task_id = "1"
+            job_id = "1"
+            task_id = "1"
+            
+        else:
+                    
+            job_id = u"1"
+            task_id = u"1"
         
         name = "example_plugin"
 
@@ -545,9 +633,15 @@ class test_SetMonitor(unittest.TestCase):
         
         monitor_url = "not a url"
         
-        job_id = "1"
+        if sys.version_info.major >= 3:
         
-        task_id = "1"
+            job_id = "1"
+            task_id = "1"
+            
+        else:
+                    
+            job_id = u"1"
+            task_id = u"1"
         
         name = "example_plugin"
 
@@ -563,9 +657,15 @@ class test_SetMonitor(unittest.TestCase):
         
         monitor_url = None
         
-        job_id = "1"
+        if sys.version_info.major >= 3:
         
-        task_id = "1"
+            job_id = "1"
+            task_id = "1"
+            
+        else:
+                    
+            job_id = u"1"
+            task_id = u"1"
         
         name = "example_plugin"
 
@@ -592,7 +692,10 @@ class test_SetMonitor(unittest.TestCase):
         with self.assertRaises(Exception) as context:
             nwp.set_status(monitor_url, job_id, task_id, name)
             
-        self.assertTrue("job_id should be a string, it is " in str(context.exception))
+        if sys.version_info.major >= 3:
+            self.assertTrue("job_id should be a string, it is " in str(context.exception))
+        else:
+            self.assertTrue("job_id should be in unicode in python2, it is" in str(context.exception))
         
         
     
@@ -600,9 +703,15 @@ class test_SetMonitor(unittest.TestCase):
         
         monitor_url = "http://localhost:" + str(mock_monitor.mock_server_port)
         
-        job_id = "1"
+        if sys.version_info.major >= 3:
         
-        task_id = None
+            job_id = "1"
+            task_id = None
+            
+        else:
+                    
+            job_id = u"1"
+            task_id = None
         
         name = "example_plugin"
 
@@ -611,16 +720,25 @@ class test_SetMonitor(unittest.TestCase):
         with self.assertRaises(Exception) as context:
             nwp.set_status(monitor_url, job_id, task_id, name)
             
-        self.assertTrue("task_id should be a string, it is " in str(context.exception))
+        if sys.version_info.major >= 3:
+            self.assertTrue("task_id should be a string, it is " in str(context.exception))
+        else:
+            self.assertTrue("task_id should be in unicode in python2, it is " in str(context.exception))
 
 
     def test_send_no_name(self):
         
         monitor_url = "http://localhost:" + str(mock_monitor.mock_server_port)
         
-        job_id = "1"
+        if sys.version_info.major >= 3:
         
-        task_id = "1"
+            job_id = "1"
+            task_id = "1"
+            
+        else:
+                    
+            job_id = u"1"
+            task_id = u"1"
         
         name = None
 
@@ -640,19 +758,17 @@ class test_on_request_class(unittest.TestCase):
         
         name = None
         
-        minio_client = Minio(
-            os.environ["MINIO_HOST"] + ":" + os.environ["MINIO_PORT"],
-            access_key=os.environ["MINIO_ACCESS"],
-            secret_key=os.environ["MINIO_SECRET"],
-            secure=True if os.environ["MINIO_SCHEME"] == "https" else False)
+        minio_client = fake_minio_client()
 
         monitor_url = os.environ["MONITOR_URL"]
 
         output_channel = MagicMock()
         output_channel.is_open = True
 
+        connection = mock_pika_BlockingConnection()
+        
         with self.assertRaises(Exception) as context:
-            nwp.on_request_class(ok_test_function, name, minio_client, output_channel, monitor_url)
+            nwp.on_request_class(connection, ok_test_function, name, minio_client, output_channel, monitor_url)
             
         self.assertTrue("plugin name should be a string, it is " in str(context.exception))
         
@@ -662,43 +778,42 @@ class test_on_request_class(unittest.TestCase):
         
         name = "example name"
         
-        minio_client = Minio(
-            os.environ["MINIO_HOST"] + ":" + os.environ["MINIO_PORT"],
-            access_key=os.environ["MINIO_ACCESS"],
-            secret_key=os.environ["MINIO_SECRET"],
-            secure=True if os.environ["MINIO_SCHEME"] == "https" else False)
+        minio_client = fake_minio_client()
 
         monitor_url = os.environ["MONITOR_URL"]
 
         output_channel = MagicMock()
         output_channel.is_open = True
+        
+        connection = mock_pika_BlockingConnection()
 
         with self.assertRaises(Exception) as context:
-            nwp.on_request_class(bad_test_function_wrong_args, name, minio_client, output_channel, monitor_url)
-            
-        self.assertTrue("Bound function must use argument names: ['nmo', 'jsonld', 'url']. You have used" in str(context.exception))
+            nwp.on_request_class(connection, bad_test_function_wrong_args, name, minio_client, output_channel, monitor_url)
+        
+        if sys.version_info.major >= 3:
+            self.assertTrue("Bound function must use argument names: ['nmo', 'jsonld', 'url']. You have used" in str(context.exception))
+        else:
+            self.assertTrue("Bound function must use argument names: [nmo, jsonld, url]. You have used" in str(context.exception))
 
 
     def test_bad_function_wrong_args_number(self):
 
         name = "example name"
         
-        minio_client = Minio(
-            os.environ["MINIO_HOST"] + ":" + os.environ["MINIO_PORT"],
-            access_key=os.environ["MINIO_ACCESS"],
-            secret_key=os.environ["MINIO_SECRET"],
-            secure=True if os.environ["MINIO_SCHEME"] == "https" else False)
+        minio_client = fake_minio_client()
 
         monitor_url = os.environ["MONITOR_URL"]
         
         connection = MagicMock()
         connection.channel = MagicMock()
         output_channel = connection.channel()
-        output_channel.is_open = True        
+        output_channel.is_open = True
+        
+        connection = mock_pika_BlockingConnection()
         
 
         with self.assertRaises(Exception) as context:
-            nwp.on_request_class(bad_test_function_wrong_no_args, name, minio_client, output_channel, monitor_url)
+            nwp.on_request_class(connection, bad_test_function_wrong_no_args, name, minio_client, output_channel, monitor_url)
 
         self.assertTrue("Bound function must take 3 arguments: nmo, jsonld and url" in str(context.exception))
 
@@ -708,11 +823,7 @@ class test_on_request_class(unittest.TestCase):
         
         name = "example name"
         
-        minio_client = Minio(
-            os.environ["MINIO_HOST"] + ":" + os.environ["MINIO_PORT"],
-            access_key=os.environ["MINIO_ACCESS"],
-            secret_key=os.environ["MINIO_SECRET"],
-            secure=True if os.environ["MINIO_SCHEME"] == "https" else False)
+        minio_client = fake_minio_client()
 
         monitor_url = None
 
@@ -720,9 +831,11 @@ class test_on_request_class(unittest.TestCase):
         connection.channel = MagicMock()
         output_channel = connection.channel()
         output_channel.is_open = True 
+        
+        connection = mock_pika_BlockingConnection()
 
         with self.assertRaises(Exception) as context:
-            nwp.on_request_class(ok_test_function, name, minio_client, output_channel, monitor_url)
+            nwp.on_request_class(connection, ok_test_function, name, minio_client, output_channel, monitor_url)
 
 
         self.assertTrue("monitor_url should be a string, it is actually" in str(context.exception))
@@ -732,20 +845,18 @@ class test_on_request_class(unittest.TestCase):
         
         name = "example name"
         
-        minio_client = Minio(
-            os.environ["MINIO_HOST"] + ":" + os.environ["MINIO_PORT"],
-            access_key=os.environ["MINIO_ACCESS"],
-            secret_key=os.environ["MINIO_SECRET"],
-            secure=True if os.environ["MINIO_SCHEME"] == "https" else False)
+        minio_client = fake_minio_client()
 
         monitor_url = os.environ["MONITOR_URL"]
 
         #set up the channels        
         output_channel = None
         
+        connection = mock_pika_BlockingConnection()
+        
 
         with self.assertRaises(Exception) as context:
-            nwp.on_request_class(ok_test_function, name, minio_client, output_channel, monitor_url)
+            nwp.on_request_class(connection, ok_test_function, name, minio_client, output_channel, monitor_url)
 
 
         self.assertTrue("output channel should be a pika blocking connection channel it is actually " in str(context.exception))
@@ -756,19 +867,18 @@ class test_on_request_class(unittest.TestCase):
         
         name = "example name"
         
-        minio_client = Minio(
-            os.environ["MINIO_HOST"] + ":" + os.environ["MINIO_PORT"],
-            access_key=os.environ["MINIO_ACCESS"],
-            secret_key=os.environ["MINIO_SECRET"],
-            secure=True if os.environ["MINIO_SCHEME"] == "https" else False)
+        minio_client = fake_minio_client()
 
         monitor_url = os.environ["MONITOR_URL"]
         
         output_channel = MagicMock()
         output_channel.is_open = False
+        
+        connection = mock_pika_BlockingConnection()
+
 
         with self.assertRaises(Exception) as context:
-            nwp.on_request_class(ok_test_function, name, minio_client, output_channel, monitor_url)
+            nwp.on_request_class(connection, ok_test_function, name, minio_client, output_channel, monitor_url)
 
         self.assertTrue("Output channel is closed" in str(context.exception))
         
@@ -777,11 +887,7 @@ class test_on_request_class(unittest.TestCase):
         
         name = "example name"
         
-        minio_client = Minio(
-            os.environ["MINIO_HOST"] + ":" + os.environ["MINIO_PORT"],
-            access_key=os.environ["MINIO_ACCESS"],
-            secret_key=os.environ["MINIO_SECRET"],
-            secure=True if os.environ["MINIO_SCHEME"] == "https" else False)
+        minio_client = fake_minio_client()
 
         monitor_url = os.environ["MONITOR_URL"]
 
@@ -790,7 +896,7 @@ class test_on_request_class(unittest.TestCase):
         connection.channel = MagicMock()
         output_channel = connection.channel()
         
-        test = nwp.on_request_class(ok_test_function, name, minio_client, output_channel, monitor_url)
+        test = nwp.on_request_class(connection, ok_test_function, name, minio_client, output_channel, monitor_url)
         
         #just test that the on_request class is a valid class
         if sys.version_info.major == 2:
@@ -801,8 +907,6 @@ class test_on_request_class(unittest.TestCase):
         #check that the variables have been set right
         self.assertTrue("ok_test_function" in str(test.function))
         
-        self.assertTrue("minio.api.Minio" in str(test.minio_client))
-        
         self.assertTrue(monitor_url == test.monitor_url)
         
         self.assertTrue(name == test.name)
@@ -811,6 +915,30 @@ class test_on_request_class(unittest.TestCase):
         
         self.assertTrue(output_channel == output_channel)
     
+    
+    def test_bad_connection_on_request_class(self):
+        
+        name = "example name"
+        
+        minio_client = fake_minio_client()
+
+        monitor_url = os.environ["MONITOR_URL"]
+
+        #set up the channels        
+        output_channel = MagicMock()
+        output_channel.is_open = True
+        
+        connection = mock_pika_BlockingConnection()
+        
+        connection.is_open = False
+        
+
+        with self.assertRaises(Exception) as context:
+            nwp.on_request_class(connection, ok_test_function, name, minio_client, output_channel, monitor_url)
+
+
+        self.assertTrue("Connection to rabbitmq is closed" in str(context.exception))
+
 
 class test_clean_function_output(unittest.TestCase):
     
@@ -2063,11 +2191,7 @@ class test_inform_monitor(unittest.TestCase):
         monitor_url = "http://localhost:" + str(mock_monitor.mock_server_port)
         
         #set up the minio client
-        minio_client = Minio(
-            os.environ["MINIO_HOST"] + ":" + os.environ["MINIO_PORT"],
-            access_key=os.environ["MINIO_ACCESS"],
-            secret_key=os.environ["MINIO_SECRET"],
-            secure=True if os.environ["MINIO_SCHEME"] == "https" else False)
+        minio_client = fake_minio_client()
         
         
         #print("^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^")        
@@ -2100,9 +2224,8 @@ class test_inform_monitor(unittest.TestCase):
 
 
         out = nwp.inform_monitor(payload, name, monitor_url, minio_client)
-
         
-        self.assertTrue(out==['Spacy', 'http://example_url.com'])
+        self.assertTrue(out=='Spacy')
     
     def test_no_payload(self):
         
@@ -2110,11 +2233,7 @@ class test_inform_monitor(unittest.TestCase):
         
         name = "example_plugin"
         
-        minio_client = Minio(
-            os.environ["MINIO_HOST"] + ":" + os.environ["MINIO_PORT"],
-            access_key=os.environ["MINIO_ACCESS"],
-            secret_key=os.environ["MINIO_SECRET"],
-            secure=True if os.environ["MINIO_SCHEME"] == "https" else False)
+        minio_client = fake_minio_client()
              
              
              
@@ -2137,11 +2256,7 @@ class test_inform_monitor(unittest.TestCase):
         
         name = "example_plugin"
         
-        minio_client = Minio(
-        os.environ["MINIO_HOST"] + ":" + os.environ["MINIO_PORT"],
-        access_key=os.environ["MINIO_ACCESS"],
-        secret_key=os.environ["MINIO_SECRET"],
-        secure=True if os.environ["MINIO_SCHEME"] == "https" else False)
+        minio_client = fake_minio_client()
 
         version = "1.0.0"
         minio_client.set_app_info(name, version)        
@@ -2292,11 +2407,7 @@ class test_inform_monitor(unittest.TestCase):
         monitor_url = "http://localhost:" + str(mock_monitor.mock_server_port)
         
         #set up the minio client
-        minio_client = Minio(
-            os.environ["MINIO_HOST"] + ":" + os.environ["MINIO_PORT"],
-            access_key=os.environ["MINIO_ACCESS"],
-            secret_key=os.environ["MINIO_SECRET"],
-            secure=True if os.environ["MINIO_SCHEME"] == "https" else False)
+        minio_client = fake_minio_client()
         
         
       
@@ -2327,6 +2438,7 @@ class test_inform_monitor(unittest.TestCase):
         
         with self.assertRaises(Exception) as context:
             nwp.inform_monitor(payload, name, monitor_url, minio_client)
+            
         
         #check we hit the problems covered in validate payload
         self.assertTrue("plugin name should be a string, it is actually:" in str(context.exception))
@@ -2464,11 +2576,7 @@ class test_inform_monitor(unittest.TestCase):
         monitor_url = None
         
         #set up the minio client
-        minio_client = Minio(
-            os.environ["MINIO_HOST"] + ":" + os.environ["MINIO_PORT"],
-            access_key=os.environ["MINIO_ACCESS"],
-            secret_key=os.environ["MINIO_SECRET"],
-            secure=True if os.environ["MINIO_SCHEME"] == "https" else False)
+        minio_client = fake_minio_client()
         
 
         minio_client.set_app_info(name, version)
@@ -2508,18 +2616,16 @@ class unit_test_on_request_function(unittest.TestCase):
         
         name = "example_on_request_plugin_name1"
         
-        minio_client = Minio(
-            os.environ["MINIO_HOST"] + ":" + os.environ["MINIO_PORT"],
-            access_key=os.environ["MINIO_ACCESS"],
-            secret_key=os.environ["MINIO_SECRET"],
-            secure=True if os.environ["MINIO_SCHEME"] == "https" else False)
+        minio_client = fake_minio_client()
     
         monitor_url = os.environ["MONITOR_URL"]
     
         output_channel = MagicMock()
         output_channel.is_open = True
+        
+        connection = MagicMock()
 
-        exampleOn_request = nwp.on_request_class(ok_test_function, name, minio_client, output_channel, monitor_url)
+        exampleOn_request = nwp.on_request_class(connection, ok_test_function, name, minio_client, output_channel, monitor_url)
         
         ch = MagicMock()
         ch.is_open = True
@@ -2603,11 +2709,7 @@ class unit_test_on_request_function(unittest.TestCase):
         
         name = "example_on_request_plugin_name1"
         
-        minio_client = Minio(
-            os.environ["MINIO_HOST"] + ":" + os.environ["MINIO_PORT"],
-            access_key=os.environ["MINIO_ACCESS"],
-            secret_key=os.environ["MINIO_SECRET"],
-            secure=True if os.environ["MINIO_SCHEME"] == "https" else False)
+        minio_client = fake_minio_client()
     
         monitor_url = os.environ["MONITOR_URL"]
         
@@ -2615,9 +2717,7 @@ class unit_test_on_request_function(unittest.TestCase):
         connection.channel = MagicMock()
         output_channel = connection.channel()
         
-        
-    
-        exampleOn_request = nwp.on_request_class(ok_test_function, name, minio_client, output_channel, monitor_url)
+        exampleOn_request = nwp.on_request_class(connection, ok_test_function, name, minio_client, output_channel, monitor_url)
         
         connection = MagicMock()
         ch = MagicMock()
@@ -2642,11 +2742,7 @@ class unit_test_on_request_function(unittest.TestCase):
         
         name = "example_on_request_plugin_name1"
         
-        minio_client = Minio(
-            os.environ["MINIO_HOST"] + ":" + os.environ["MINIO_PORT"],
-            access_key=os.environ["MINIO_ACCESS"],
-            secret_key=os.environ["MINIO_SECRET"],
-            secure=True if os.environ["MINIO_SCHEME"] == "https" else False)
+        minio_client = fake_minio_client()
     
         monitor_url = os.environ["MONITOR_URL"]
     
@@ -2655,9 +2751,7 @@ class unit_test_on_request_function(unittest.TestCase):
         output_channel = connection.channel()
         output_channel.is_open = True
         
-        
-    
-        exampleOn_request = nwp.on_request_class(ok_test_function, name, minio_client, output_channel, monitor_url)
+        exampleOn_request = nwp.on_request_class(connection, ok_test_function, name, minio_client, output_channel, monitor_url)
         
         connection = MagicMock()
         ch = MagicMock()
@@ -2742,17 +2836,16 @@ class unit_test_on_request_function(unittest.TestCase):
 
         name = "example_on_request_plugin_name1"
         
-        minio_client = Minio(
-            os.environ["MINIO_HOST"] + ":" + os.environ["MINIO_PORT"],
-            access_key=os.environ["MINIO_ACCESS"],
-            secret_key=os.environ["MINIO_SECRET"],
-            secure=True if os.environ["MINIO_SCHEME"] == "https" else False)
+        minio_client = fake_minio_client()
     
         monitor_url = os.environ["MONITOR_URL"]
         
         output_channel = MagicMock()
+        
+        connection = MagicMock()
+
         #output_channel
-        exampleOn_request = nwp.on_request_class(ok_test_function, name, minio_client, output_channel, monitor_url)
+        exampleOn_request = nwp.on_request_class(connection, ok_test_function, name, minio_client, output_channel, monitor_url)
         
         #connection = pika.BlockingConnection(parameters)
         #ch = connection.channel()
@@ -2848,13 +2941,7 @@ class test_send(unittest.TestCase):
         
         name = None
         
-        properties = pika.BasicProperties(delivery_mode=2)
-        
-        minio_client = Minio(
-            os.environ["MINIO_HOST"] + ":" + os.environ["MINIO_PORT"],
-            access_key=os.environ["MINIO_ACCESS"],
-            secret_key=os.environ["MINIO_SECRET"],
-            secure=True if os.environ["MINIO_SCHEME"] == "https" else False)
+        minio_client = fake_minio_client()
     
         monitor_url = os.environ["MONITOR_URL"]
         
@@ -2862,12 +2949,13 @@ class test_send(unittest.TestCase):
         input_channel.is_open = True
         output_channel = MagicMock()
         output_channel.is_open = True
+        output = payload
         
         method = pika.spec.Basic.Deliver(delivery_tag=1, routing_key=name)
         
         with self.assertRaises(Exception) as context:
-            nwp.send(name, payload, input_channel, output_channel, method, properties, minio_client, monitor_url, ok_test_function)
-
+            nwp.send(name, payload, output, input_channel, output_channel, method, minio_client, monitor_url)
+            
         self.assertTrue("plugin name passed to send should be a string, it is actually " in str(context.exception))   
     
     def test_bad_input_channel(self):
@@ -2883,13 +2971,7 @@ class test_send(unittest.TestCase):
         
         name = "example_plugin"
         
-        properties = pika.BasicProperties(delivery_mode=2)
-        
-        minio_client = Minio(
-            os.environ["MINIO_HOST"] + ":" + os.environ["MINIO_PORT"],
-            access_key=os.environ["MINIO_ACCESS"],
-            secret_key=os.environ["MINIO_SECRET"],
-            secure=True if os.environ["MINIO_SCHEME"] == "https" else False)
+        minio_client = fake_minio_client()
     
         monitor_url = os.environ["MONITOR_URL"]
         
@@ -2897,11 +2979,13 @@ class test_send(unittest.TestCase):
         output_channel = MagicMock()
         output_channel.is_open = True
         
+        output = payload
+        
         method = pika.spec.Basic.Deliver(delivery_tag=1, routing_key=name)
         
         with self.assertRaises(Exception) as context:
-            nwp.send(name, payload, input_channel, output_channel, method, properties, minio_client, monitor_url, ok_test_function)
-    
+            nwp.send(name, payload, output, input_channel, output_channel, method, minio_client, monitor_url)
+            
 
         self.assertTrue("Input channel should be a pika blocking connection channel it is actually" in str(context.exception))  
            
@@ -2919,13 +3003,7 @@ class test_send(unittest.TestCase):
         
         name = "example_plugin"
         
-        properties = pika.BasicProperties(delivery_mode=2)
-        
-        minio_client = Minio(
-            os.environ["MINIO_HOST"] + ":" + os.environ["MINIO_PORT"],
-            access_key=os.environ["MINIO_ACCESS"],
-            secret_key=os.environ["MINIO_SECRET"],
-            secure=True if os.environ["MINIO_SCHEME"] == "https" else False)
+        minio_client = fake_minio_client()
     
         monitor_url = os.environ["MONITOR_URL"]
         
@@ -2934,9 +3012,10 @@ class test_send(unittest.TestCase):
         output_channel = None 
         
         method = pika.spec.Basic.Deliver(delivery_tag=1, routing_key=name)
+        output = payload
         
         with self.assertRaises(Exception) as context:
-            nwp.send(name, payload, input_channel, output_channel, method, properties, minio_client, monitor_url, ok_test_function)
+            nwp.send(name, payload, output, input_channel, output_channel, method, minio_client, monitor_url)
             
     
         self.assertTrue("Output channel should be a pika blocking connection channel it is actually" in str(context.exception))  
@@ -2953,14 +3032,8 @@ class test_send(unittest.TestCase):
         
         
         name = "example_plugin"
-        
-        properties = pika.BasicProperties(delivery_mode=2)
-        
-        minio_client = Minio(
-            os.environ["MINIO_HOST"] + ":" + os.environ["MINIO_PORT"],
-            access_key=os.environ["MINIO_ACCESS"],
-            secret_key=os.environ["MINIO_SECRET"],
-            secure=True if os.environ["MINIO_SCHEME"] == "https" else False)
+
+        minio_client = fake_minio_client()
     
         monitor_url = os.environ["MONITOR_URL"]
 
@@ -2968,13 +3041,13 @@ class test_send(unittest.TestCase):
         input_channel.is_open = False
         output_channel = MagicMock()
         output_channel.is_open = True
-        
+        output = payload
 
         
         method = pika.spec.Basic.Deliver(delivery_tag=1, routing_key=name)
         
         with self.assertRaises(Exception) as context:
-            nwp.send(name, payload, input_channel, output_channel, method, properties, minio_client, monitor_url, ok_test_function)
+            nwp.send(name, payload, output, input_channel, output_channel, method, minio_client, monitor_url)
             
         self.assertTrue("Input channel is closed" in str(context.exception))  
     
@@ -2990,14 +3063,9 @@ class test_send(unittest.TestCase):
         
         
         name = "example_plugin"
+
         
-        properties = pika.BasicProperties(delivery_mode=2)
-        
-        minio_client = Minio(
-            os.environ["MINIO_HOST"] + ":" + os.environ["MINIO_PORT"],
-            access_key=os.environ["MINIO_ACCESS"],
-            secret_key=os.environ["MINIO_SECRET"],
-            secure=True if os.environ["MINIO_SCHEME"] == "https" else False)
+        minio_client = fake_minio_client()
     
         monitor_url = os.environ["MONITOR_URL"]
         
@@ -3012,9 +3080,11 @@ class test_send(unittest.TestCase):
         
         method = pika.spec.Basic.Deliver(delivery_tag=1, routing_key=name)
         
+        output = payload
+        
 
         with self.assertRaises(Exception) as context:
-            nwp.send(name, payload, input_channel, output_channel, method, properties, minio_client, monitor_url, ok_test_function)     
+            nwp.send(name, payload, output, input_channel, output_channel, method, minio_client, monitor_url)     
         
         self.assertTrue("Output channel is closed" in str(context.exception))
 
@@ -3032,13 +3102,8 @@ class test_send(unittest.TestCase):
         
         name = "example_plugin"
         
-        properties = pika.BasicProperties(delivery_mode=2)
         
-        minio_client = Minio(
-            os.environ["MINIO_HOST"] + ":" + os.environ["MINIO_PORT"],
-            access_key=os.environ["MINIO_ACCESS"],
-            secret_key=os.environ["MINIO_SECRET"],
-            secure=True if os.environ["MINIO_SCHEME"] == "https" else False)
+        minio_client = fake_minio_client()
     
         monitor_url = os.environ["MONITOR_URL"]
         
@@ -3046,13 +3111,14 @@ class test_send(unittest.TestCase):
         connection.channel = MagicMock()
         input_channel = connection.channel()
         output_channel = connection.channel()
-        output_channel.is_open = True 
+        output_channel.is_open = True
+        output = payload
         
         method = 4
         
         with self.assertRaises(Exception) as context:
-            nwp.send(name, payload, input_channel, output_channel, method, properties, minio_client, monitor_url, ok_test_function)
-            
+            nwp.send(name, payload, output, input_channel, output_channel, method, minio_client, monitor_url)     
+        
         self.assertTrue("Method needs to be a pika method, it is actually:" in str(context.exception))
         
 
@@ -3128,14 +3194,8 @@ class test_send(unittest.TestCase):
         
         
         name = "test_send_example_plugin"
-        
-        properties = pika.BasicProperties(delivery_mode=2)
-        
-        minio_client = Minio(
-            os.environ["MINIO_HOST"] + ":" + os.environ["MINIO_PORT"],
-            access_key=os.environ["MINIO_ACCESS"],
-            secret_key=os.environ["MINIO_SECRET"],
-            secure=True if os.environ["MINIO_SCHEME"] == "https" else False)
+
+        minio_client = fake_minio_client()
     
         monitor_url = "http://localhost:" + str(mock_monitor.mock_server_port)
         
@@ -3156,8 +3216,9 @@ class test_send(unittest.TestCase):
         
         method = pika.spec.Basic.Deliver(delivery_tag=1, routing_key=name)
         
+        output = payload        
         
-        result = nwp.send(name, payload, input_channel, output_channel, method, properties, minio_client, monitor_url, ok_test_function)
+        result = nwp.send(name, payload, output, input_channel, output_channel, method, minio_client, monitor_url)
         
         self.assertTrue(result == {'task_id': 'example-taskid-pass-send', 'job_id': 'example-job-id-pass-send'})
 
@@ -3168,6 +3229,92 @@ class test_send(unittest.TestCase):
 
         self.assertTrue(sent==json.dumps(payload))
 
+class example_minio_object(MagicMock):
+    
+    def set_return_url(self, url):
+        
+        self.url = url
+        
+    def stat_object(self, job_id, path):
+        
+        self.found = True
+        
+    
+    def presigned_get_object(self, job_id, path):
+
+        return self.url
+
+class example_bad_minio_object(MagicMock):
+    
+    def set_return_url(self, url):
+        
+        self.url = url
+        
+    def stat_object(self, job_id, path):
+        
+        self.found = True
+        
+    
+    def presigned_get_object(self, job_id, path):
+
+        raise Exception("Could not find url")
+
+
+class test_get_url(unittest.TestCase):
+    
+    def test_pass_find(self):
+        
+        nmo = {}
+        nmo['task'] = {}
+        nmo['task']['task_id'] = 't-001'
+        nmo['source'] = {}
+        nmo['source']['name'] = 'example'
+        
+        nmo['job'] = {}
+        nmo['job']['job_id'] = 'j-001'
+        
+        payload = {'nmo':nmo}
+
+                
+        fake_minio_client = example_minio_object()
+        
+        fake_minio_client.url = 'http://example.com'
+        
+        example = nwp.get_url(payload, fake_minio_client)   
+
+        self.assertTrue(example == 'http://example.com')
+        
+        
+    def test_fail_bad_fetch(self):
+        
+        nmo = {}
+        nmo['task'] = {}
+        nmo['task']['task_id'] = 't-001'
+        nmo['source'] = {}
+        nmo['source']['name'] = 'example'
+        
+        nmo['job'] = {}
+        nmo['job']['job_id'] = 'j-001'
+        
+        payload = {'nmo':nmo}
+        
+        fake_minio_client = example_bad_minio_object()
+        
+        example = nwp.get_url(payload, fake_minio_client)
+        
+        self.assertTrue(example == None)
+    
+    def test_fail_bad_payload(self):
+        
+        payload = None
+        
+        fake_minio_client = example_bad_minio_object()
+        
+        with self.assertRaises(Exception) as context:
+            nwp.get_url(payload, fake_minio_client)    
+        
+        self.assertTrue("The payload should be a dictionary, is actually:" in str(context.exception))
+        
 
 class mocked_channel():
     
@@ -3236,7 +3383,8 @@ def sleeper1():
 class test_bind(unittest.TestCase):
 
     @patch('pika.BlockingConnection')
-    def test_good_bind(self, mock_function):
+    @patch('minio.Minio')
+    def test_good_bind(self, mock_function, fake_minio_client):
     
         print("testing good bind function call")
         
@@ -3294,54 +3442,785 @@ class test_bind(unittest.TestCase):
         
         with self.assertRaises(Exception) as context:
             nwp.bind(bad_test_function_wrong_args, name)
-        
+            
+
         self.assertTrue("Bound function must use argument names: [nmo, jsonld, url]. You have used" in str(context.exception))
         
-        
-class test_heartrunner(unittest.TestCase):
     
-    def test_pacemaker(self):
+#################################
+### Start of group unit tests ###
+#################################    
+    
+class test_group_check(unittest.TestCase):
+    
+    def test_confirm_group(self):
         
-        connection = MagicMock()
-        connection.is_open = True
         
-        nwp.heart_runner(connection)
+        nmo = {}
+        nmo['source'] = {}
+        nmo['source']['misc'] = {}
+        nmo['source']['misc']['isGroup'] = True        
         
-    def test_bad_connection(self):
         
-        connection = 5
+        group_status = nwp.check_for_group(nmo)
+        
+        
+        self.assertTrue(group_status)
+        
+    def test_confirm_not_group(self):
+        
+        nmo = {}
+        nmo['source'] = {}
+        nmo['source']['misc'] = {}
+        nmo['source']['misc']['isGroup'] = False
+        
+        group_status = nwp.check_for_group(nmo)
+        
+        self.assertTrue(not group_status)
+        
+        
+    def test_no_group_description(self):
+        
+        
+        nmo = {}
+        
+        group_status = nwp.check_for_group(nmo)
+        
+        self.assertTrue(not group_status)
+        
+        
+    def test_bad_nmo(self):
+        
+        nmo = 'example'
         
         with self.assertRaises(Exception) as context:
-            nwp.heart_runner(connection)
+            nwp.check_for_group(nmo)
             
-        self.assertTrue("Heartbeat runner requires a connection to rabbitmq as connection, actually has" in str(context.exception))
-    
-    def test_closed_connection(self):
-        
-        connection = MagicMock()
-        connection.is_open = False
-        
-        with self.assertRaises(Exception) as context:
-            nwp.heart_runner(connection)
-            
-        self.assertTrue("Heart runner's connection to rabbitmq should be open, is actually closed" in str(context.exception))
 
-    def test_auto_timeout(self):
+        self.assertTrue("nmo should be a dictionary, is actually:" in str(context.exception))
         
-        def sleeper():
-            time.sleep(11)
+
+
+class test_pull_tarball_url(unittest.TestCase):
+    
+    def test_fine_pull(self):
         
-        connection=MagicMock()
-        connection.is_open = True
-        connection.process_data_events = sleeper
+        nmo = {}
+        nmo['source'] = {}
+        nmo['source']['misc'] = {}
+        nmo['source']['misc']['cacheURL'] = "http://www.example.com"
+
+        test_url = nwp.pull_tarball_url(nmo)
+        
+        
+        self.assertTrue(test_url == 'http://www.example.com')
+    
+
+    def test_missing_url(self):
+        
+        nmo = {}
+        
+        test_url = nwp.pull_tarball_url(nmo)
+        
+        
+        self.assertTrue(test_url == None)
+        
+        
+    def test_bad_nmo(self):
+        
+        
+        nmo = 'test'
         
         with self.assertRaises(Exception) as context:
+            nwp.check_for_group(nmo)
             
-            runner = nwp.heart_runner(connection)
-            
-            runner._process_data_events()
+
+        self.assertTrue("nmo should be a dictionary, is actually:" in str(context.exception))
         
-        self.assertTrue("Pacemaker has timed out" in str(context.exception))
+
+class test_pull_and_extract_tarball(unittest.TestCase):
+    
+    def test_pull_and_extract_tar(self):
+        
+        url = 'http://localhost:8072/example_data.tar'
+        
+        cache_folder_name = '/tmp'
+        
+        nwp.pull_and_extract_tarball(url, cache_folder_name)
+        
+        files = os.listdir('/tmp')
+        
+        self.assertTrue(len(files)==45)
+        
+        shutil.rmtree('/tmp')
+        
+    def test_pull_and_extract_tar_gz(self):
+        
+        if os.path.exists('/tmp'):
+            shutil.rmtree('/tmp')
+        
+        url = 'http://localhost:8072/example_data.tar.gz'
+
+        os.mkdir("/tmp")
+        
+        cache_folder_name = '/tmp/'
+        
+        nwp.pull_and_extract_tarball(url, cache_folder_name)
+        
+        files = os.listdir('/tmp/example_data/')
+        
+        self.assertTrue(len(files)==43)
+        
+        shutil.rmtree('/tmp')
+        
+    def test_bad_url(self):
+        
+        url = 'http://localhost:8071/example_data.tar.gz'
+        
+        cache_folder_name = '/tmp'
+        
+        with self.assertRaises(Exception) as context:
+            nwp.pull_and_extract_tarball(url, cache_folder_name)
+
+        self.assertTrue("COULD NOT FIND TARBALL AT:" in str(context.exception))
+        
+        
+    def test_bad_cache_folder(self):
+        
+        url = 'http://localhost:8072/example_data.tar.gz'
+        
+        cache_folder_name = None
+        
+        with self.assertRaises(Exception) as context:
+            nwp.pull_and_extract_tarball(url, cache_folder_name)
+
+        self.assertTrue("The cache folder should be a creatable path, is actually:" in str(context.exception))
+        
+        
+class test_pull_jsonld(unittest.TestCase):
+    
+    def test_loading_jsonld(self):
+        
+        test_json = {}
+        test_json['test'] = 'example'
+        
+        f = open('example.json', 'w')
+        f.write(json.dumps(test_json))
+        
+        f.close()
+        
+        test_result = nwp.read_jsonld('example.json')
+        
+        self.assertTrue(test_result == test_json)
+        
+        os.remove('example.json')
+        
+    def test_bad_filename(self):
+        
+        with self.assertRaises(Exception) as context:
+            nwp.read_jsonld(None)
+
+        self.assertTrue("Filename must be a string, is actually" in str(context.exception))
+        
+
+
+class test_initialise_writer(unittest.TestCase):
+    
+    def test_initialise_writer_properly(self):
+        
+        nmo = {}
+        
+        test_writer = nwp.writer(nmo)
+        
+        self.assertTrue(test_writer.nmo == nmo)
+        self.assertTrue(test_writer.out_folder == '/output')
+        self.assertTrue(test_writer.output_filename=='results.json')
+        self.assertTrue(test_writer.out_file == '/output/results.json')
+        
+        
+        #now check that the output file has been initalised properly
+        f = open(test_writer.out_file, 'r')
+        raw = f.read()
+        f.close()
+        
+        self.assertTrue(raw=='')
+        
+        shutil.rmtree('/output')
+        
+    def test_bad_nmo(self):
+        
+        nmo = None
+        
+        with self.assertRaises(Exception) as context:
+            nwp.writer(nmo)
+
+        self.assertTrue("nmo should be a dictionary, is actually:" in str(context.exception))
+        
+class mock_single_file_class():
+
+    def __init__(self, filename):
+
+        self.filename = filename
+        self.jsonld = {'example':'json'}
+        self.change_dict = {}
+
+class test_writer_append_task_jsonld(unittest.TestCase):
+    
+    def test_find_add_file(self):
+        
+        nmo = {}
+        nmo['task'] = {}
+        nmo['task']['task_id'] = 't-001'
+        
+        test_writer = nwp.writer(nmo)
+        
+        filename = 'example.json'
+        
+        if not os.path.exists("/cache"):
+            os.mkdir("/cache")
+            
+        f = open('/cache/' + filename, 'w')
+        f.write(json.dumps({"example": "json"}))
+        f.close()
+        
+        example_single_file = nwp.single_file(filename)
+        
+        example_single_file.change_dict = {"test":"example"}
+        
+        test_writer.append_task(example_single_file)
+        
+        f = open('/output/results.json', 'r')
+        raw = f.read()
+        f.close()
+        
+        lines = raw.split("\n")
+
+
+        #check the single file label line 
+        line1 = json.loads(lines[0])
+        
+        self.assertTrue(line1['update']['_type']=='taskResults')
+        self.assertTrue(line1['update']['_parent'] == 't-001')
+        self.assertTrue(line1['update']['_index'] == 'group')
+        self.assertTrue(line1['update']['_id'] == 'example.json:t-001')
+        
+        
+        line2 = json.loads(lines[1])
+        self.assertTrue(line2['doc_as_upsert']==True)
+        self.assertTrue(line2['doc'] == {'test':'example'})
+            
+    def test_add_file_no_change_dict(self):
+        
+        nmo = {}
+        nmo['task'] = {}
+        nmo['task']['task_id'] = 't-001'
+        
+        test_writer = nwp.writer(nmo)
+        
+        filename = 'example.json'      
+        
+        if not os.path.exists("/cache"):
+            os.mkdir("/cache")
+            
+        f = open('/cache/' + filename, 'w')
+        f.write(json.dumps({"example": "json"}))
+        f.close()
+        
+        example_single_file = nwp.single_file(filename)
+        
+        test_writer.append_task(example_single_file)
+        
+        f = open('/output/results.json', 'r')
+        raw = f.read()
+        f.close()
+
+        #check the single file label line 
+        self.assertTrue(raw=='')
+        
+        shutil.rmtree("/output")
+
+
+    def test_add_file_not_single_file(self):
+        
+        
+        nmo = {}
+        nmo['task'] = {}
+        nmo['task']['task_id'] = 't-001'
+        
+        test_writer = nwp.writer(nmo)
+        
+        with self.assertRaises(Exception) as context:
+            test_writer.append_task({'test':'example'})
+
+        self.assertTrue("You can only write a nanowire plugin single_file object to the output using the append task command. You have tried to send an invalid" in str(context.exception))
+        
+
+
+class test_add_group_jsonld(unittest.TestCase):
+    
+    
+    def test_add_group_data_pass_group_first(self):
+        
+        nmo = {}
+        nmo['task'] = {}
+        nmo['task']['task_id'] = 't-001'
+        
+        nmo['job'] = {}
+        nmo['job']['user_id'] = 'u-001'
+        nmo['job']['project_id'] = 'p-001'
+        
+        test_writer = nwp.writer(nmo)
+        
+        filename = 'results.json'      
+        
+        if not os.path.exists("/output"):
+            os.mkdir("/output")
+            
+            
+        f = open('/output/' + filename, 'w')
+        f.write("")
+        f.close()
+                
+        #make an example file to add group data to
+        group_jsonld = {'example': 'group'}
+        test_writer.add_group_jsonld(group_jsonld)
+        
+        f = open('/output/' + filename, 'r')
+        raw = f.read()
+        f.close()
+        
+        
+        lines = raw.split("\n")
+        
+        line1 = json.loads(lines[0])
+        line2 = json.loads(lines[1])
+        
+        
+        self.assertTrue(line1['update']['_id'] == nmo['task']['task_id'])
+        self.assertTrue(line1['update']['_type'] == 'groupResults')
+        self.assertTrue(line1['update']['_index'] == 'group')
+        
+        self.assertTrue(line2['doc_as_upsert'])
+        
+        self.assertTrue(line2['doc']['meta']['userId'] == nmo['job']['user_id'])
+        self.assertTrue(line2['doc']['meta']['projectId'] == nmo['job']['project_id'])
+        self.assertTrue(line2['doc']['meta']['taskId'] == nmo['task']['task_id'])
+        self.assertTrue(line2['doc']['jsonLD'] == group_jsonld)
+        
+        #check the date is a date
+        
+        #check to see if this crashes
+        a = datetime.datetime.strptime(line2['doc']['meta']['storedAt'], "%Y-%m-%dT%H:%M:%S.%f")
+        
+        self.assertTrue('datetime' in str(type(a)))
+        
+    def test_add_group_data_pass_group_with_stuff(self):
+        
+        nmo = {}
+        nmo['task'] = {}
+        nmo['task']['task_id'] = 't-001'
+        
+        nmo['job'] = {}
+        nmo['job']['user_id'] = 'u-001'
+        nmo['job']['project_id'] = 'p-001'
+        
+        test_writer = nwp.writer(nmo)
+        
+        filename = 'results.json'      
+        
+        if not os.path.exists("/output"):
+            os.mkdir("/output")
+            
+            
+        f = open('/output/' + filename, 'w')
+        f.write("Here are some lines that were\nHere before we started\n")
+        f.close()
+                
+        #make an example file to add group data to
+        group_jsonld = {'example': 'group'}
+        test_writer.add_group_jsonld(group_jsonld)
+        
+        f = open('/output/' + filename, 'r')
+        raw = f.read()
+        f.close()
+        
+        
+        lines = raw.split("\n")
+        
+        line1 = json.loads(lines[0])
+        line2 = json.loads(lines[1])
+        line3 = lines[2]
+        line4 = lines[3]
+        
+        
+        self.assertTrue(line1['update']['_id'] == nmo['task']['task_id'])
+        self.assertTrue(line1['update']['_type'] == 'groupResults')
+        self.assertTrue(line1['update']['_index'] == 'group')
+        
+        self.assertTrue(line2['doc_as_upsert'])
+        
+        self.assertTrue(line2['doc']['meta']['userId'] == nmo['job']['user_id'])
+        self.assertTrue(line2['doc']['meta']['projectId'] == nmo['job']['project_id'])
+        self.assertTrue(line2['doc']['meta']['taskId'] == nmo['task']['task_id'])
+        self.assertTrue(line2['doc']['jsonLD'] == group_jsonld)
+        
+        #check the date is a date
+        
+        #check to see if this crashes
+        a = datetime.datetime.strptime(line2['doc']['meta']['storedAt'], "%Y-%m-%dT%H:%M:%S.%f")
+        
+        self.assertTrue('datetime' in str(type(a)))
+        
+        #check the other lines were kept
+        self.assertTrue(line3 == 'Here are some lines that were')
+        self.assertTrue(line4 == 'Here before we started')
+
+
+class test_initialise_reader(unittest.TestCase):
+    
+    def test_initialise(self):
+        
+        if os.path.exists('/cache'):
+            shutil.rmtree('/cache')
+        
+        os.mkdir("/cache")
+        os.mkdir('/cache/jsonlds')
+        
+        f = open('/cache/jsonlds/example.json', 'w')
+        f.write(json.dumps({'test':'jsonld'}))
+        f.close()
+    
+        test = nwp.reader()
+        
+        self.assertTrue(test.file_cache == '/cache/jsonlds')
+        self.assertTrue(test.files == ['example.json'])
+        
+        shutil.rmtree('/cache')
+        
+
+#this is the important test for the reader as it's the bit johny public interacts with
+class test_create_generator(unittest.TestCase):
+    
+    def test_pass_file_generator(self):
+        
+        #download and extract an example tarball
+        url = 'http://localhost:8072/jsonlds.tar'
+        
+        cache_folder_name = '/cache/'
+        
+        nwp.pull_and_extract_tarball(url, cache_folder_name)
+        
+
+        test_read = nwp.reader()
+        
+        count = 0
+        for file in test_read.file_generator():
+            
+            self.assertTrue('json' in file.filename)
+            self.assertTrue(isinstance(file.jsonld, dict))
+            self.assertTrue(file.change_dict == {})
+            count += 1
+
+        self.assertTrue(count == 43)
+            
+    
+class test_single_file_class(unittest.TestCase):
+    
+    def test_pass(self):
+        
+        test_filename = 'example.json'
+        
+        os.mkdir("/cache")
+
+        f = open('/cache/' + test_filename, 'w')
+        f.write(json.dumps({"example": "data"}))
+        f.close()
+        
+        test_file = nwp.single_file(test_filename)
+        
+        self.assertTrue(test_file.filename == test_filename)
+        self.assertTrue(test_file.jsonld == {"example": "data"})
+        self.assertTrue(test_file.change_dict == {})
+
+        shutil.rmtree('/cache')
+
+    def test_bad_location(self):
+        
+        test_filename = 'example.json'
+        
+        with self.assertRaises(Exception) as context:
+            nwp.single_file(test_filename)
+
+        self.assertTrue("File to be loaded does not exist:" in str(context.exception))
+        
+
+
+    
+class test_minio_tool_send(unittest.TestCase):
+    
+    
+    def test_send_fine_no_prior_storePayloads(self):
+        
+        if os.path.exists("/cache"):
+            shutil.rmtree("/cache")
+            
+        if os.path.exists("/output"):
+            shutil.rmtree("/output")
+        
+        test_client = Minio('test')
+        
+        test_tool = nwp.Minio_tool(test_client)
+        
+        test_tool.minioClient = fake_minio_client()
+        
+        os.mkdir("/cache")
+        os.mkdir("/output")
+        f = open("results.json", 'w')
+        f.write("")
+        f.close()
+
+        nmo = {}
+        nmo['job'] = {}
+        nmo['job']['job_id'] = 'j-001'
+        
+        nmo['task'] = {}
+        nmo['task']['task_id'] = 't-001'
+        
+        nmo['source'] = {}
+        nmo['source']['misc'] = {}
+        
+        test_tool.send_file('results.json', nmo, 'example_plugin')        
+
+
+        self.assertTrue(not os.path.exists("/cache"))
+        self.assertTrue(not os.path.exists("/output"))
+        
+        
+        
+    def test_send_fine_prior_storePayloads(self):
+        
+        if os.path.exists("/cache"):
+            shutil.rmtree("/cache")
+            
+        if os.path.exists("/output"):
+            shutil.rmtree("/output")
+        
+        
+        test_client = Minio('test')
+        
+        test_tool = nwp.Minio_tool(test_client)
+        
+        test_tool.minioClient = fake_minio_client()
+        
+        os.mkdir("/cache")
+        os.mkdir("/output")
+        f = open("results.json", 'w')
+        f.write("")
+        f.close()
+
+        nmo = {}
+        nmo['job'] = {}
+        nmo['job']['job_id'] = 'j-001'
+        
+        nmo['task'] = {}
+        nmo['task']['task_id'] = 't-001'
+        
+        nmo['source'] = {}
+        nmo['source']['misc'] = {}
+        nmo['source']['misc']['storePayloads'] = ['example']
+        
+        test_tool.send_file('results.json', nmo, 'example_plugin')
+        
+        
+        self.assertTrue(nmo['source']['misc']['storePayloads'] == ['example', 't-001/group/example_plugin.bin'])
+
+
+        self.assertTrue(not os.path.exists("/cache"))
+        self.assertTrue(not os.path.exists("/output"))
+        
+        
+    def test_fail_no_file(self):
+        
+        if os.path.exists("/cache"):
+            shutil.rmtree("/cache")
+            
+        if os.path.exists("/output"):
+            shutil.rmtree("/output")
+        
+        
+        test_client = Minio('test')
+        
+        test_tool = nwp.Minio_tool(test_client)
+        
+        test_tool.minioClient = fake_minio_client()
+        
+        os.mkdir("/cache")
+        os.mkdir("/output")
+
+        nmo = {}
+        nmo['job'] = {}
+        nmo['job']['job_id'] = 'j-001'
+        
+        nmo['task'] = {}
+        nmo['task']['task_id'] = 't-001'
+        
+        nmo['source'] = {}
+        nmo['source']['misc'] = {}
+        nmo['source']['misc']['storePayloads'] = ['example']
+        
+        
+          
+        with self.assertRaises(Exception) as context:
+            test_tool.send_file('/output/results.json', nmo, 'example_plugin')
+
+        self.assertTrue("Tried to send non-existant file:" in str(context.exception))
+        
+        
+    def test_bad_nmo_no_jobid(self):
+        
+        
+        if os.path.exists("/cache"):
+            shutil.rmtree("/cache")
+            
+        if os.path.exists("/output"):
+            shutil.rmtree("/output")
+        
+        
+        test_client = Minio('test')
+        
+        test_tool = nwp.Minio_tool(test_client)
+        
+        test_tool.minioClient = fake_minio_client()
+        
+        os.mkdir("/cache")
+        os.mkdir("/output")
+        f = open("results.json", 'w')
+        f.write("")
+        f.close()
+
+        nmo = {}
+        
+        nmo['task'] = {}
+        nmo['task']['task_id'] = 't-001'
+        
+        nmo['source'] = {}
+        nmo['source']['misc'] = {}
+        nmo['source']['misc']['storePayloads'] = ['example']
+        
+        
+          
+        with self.assertRaises(Exception) as context:
+            test_tool.send_file('results.json', nmo, 'example_plugin')
+
+        self.assertTrue("Key information missing from nmo either job_id or task_id. nmo is:" in str(context.exception))
+        
+        
+    def test_bad_nmo_no_taskid(self):
+        
+        
+        if os.path.exists("/cache"):
+            shutil.rmtree("/cache")
+            
+        if os.path.exists("/output"):
+            shutil.rmtree("/output")
+        
+        
+        test_client = Minio('test')
+        
+        test_tool = nwp.Minio_tool(test_client)
+        
+        test_tool.minioClient = fake_minio_client()
+        
+        os.mkdir("/cache")
+        os.mkdir("/output")
+        f = open("results.json", 'w')
+        f.write("")
+        f.close()
+
+        nmo = {}
+        nmo['job'] = {}
+        nmo['job']['job_id'] = 'j-001'
+
+        
+        nmo['source'] = {}
+        nmo['source']['misc'] = {}
+        nmo['source']['misc']['storePayloads'] = ['example']
+        
+        
+          
+        with self.assertRaises(Exception) as context:
+            test_tool.send_file('results.json', nmo, 'example_plugin')
+
+        self.assertTrue("Key information missing from nmo either job_id or task_id. nmo is:" in str(context.exception))
+        
+        
+    def test_bad_nmo_no_misc(self):
+        
+        if os.path.exists("/cache"):
+            shutil.rmtree("/cache")
+            
+        if os.path.exists("/output"):
+            shutil.rmtree("/output")
+        
+        
+        test_client = Minio('test')
+        
+        test_tool = nwp.Minio_tool(test_client)
+        
+        test_tool.minioClient = fake_minio_client()
+        
+        os.mkdir("/cache")
+        os.mkdir("/output")
+        f = open("results.json", 'w')
+        f.write("")
+        f.close()
+
+        nmo = {}
+        nmo['job'] = {}
+        nmo['job']['job_id'] = 'j-001'
+        
+        nmo['task'] = {}
+        nmo['task']['task_id'] = 't-001'
+        
+        nmo['source'] = {}
+    
+        with self.assertRaises(Exception) as context:
+            test_tool.send_file('results.json', nmo, 'example_plugin')
+
+        self.assertTrue("Misc field missing from nmo. nmo is:" in str(context.exception))
+        
+        
+    def test_bad_nmo_no_source(self):
+        
+        if os.path.exists("/cache"):
+            shutil.rmtree("/cache")
+            
+        if os.path.exists("/output"):
+            shutil.rmtree("/output")
+        
+        
+        test_client = Minio('test')
+        
+        test_tool = nwp.Minio_tool(test_client)
+        
+        test_tool.minioClient = fake_minio_client()
+        
+        os.mkdir("/cache")
+        os.mkdir("/output")
+
+        nmo = {}
+        nmo['job'] = {}
+        nmo['job']['job_id'] = 'j-001'
+        
+        nmo['task'] = {}
+        nmo['task']['task_id'] = 't-001'
+
+    
+        with self.assertRaises(Exception) as context:
+            test_tool.send_file('results.json', nmo, 'example_plugin')
+
+        self.assertTrue("Misc field missing from nmo. nmo is:" in str(context.exception))
+        
 
 
 ###############################
@@ -3376,8 +4255,6 @@ if sys.version_info.major == 3:
     class MockServerRequestHandler(BaseHTTPRequestHandler):
         def do_GET(self):
             
-            #print("There is a get")
-    
             # Process an HTTP GET request and return a response with an HTTP 200 status.
             self.protocol_version='HTTP/1.1'
             self.send_response(200, 'OK')
@@ -3387,9 +4264,6 @@ if sys.version_info.major == 3:
             
     
         def do_POST(self):
-            
-            #print("There is indeed a post")
-            
             
             self.protocol_version='HTTP/1.1'
             self.send_response(200, 'OK')
@@ -3415,8 +4289,6 @@ if sys.version_info.major == 3:
 elif sys.version_info.major == 2:
     class MockServerRequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
         def do_GET(self):
-            
-            #print("There is a get")
     
             # Process an HTTP GET request and return a response with an HTTP 200 status.
             self.protocol_version='HTTP/1.1'
@@ -3427,9 +4299,6 @@ elif sys.version_info.major == 2:
             
     
         def do_POST(self):
-            
-            #print("There is indeed a post")
-            
             
             self.protocol_version='HTTP/1.1'
             self.send_response(200, 'OK')
@@ -3453,30 +4322,66 @@ elif sys.version_info.major == 2:
 
 
 
+
+
+class mock_tarball_server():
+    
+
+    def __init__(self):
+        
+
+        self.server_address = ('', 8072)
+        
+        
+        if sys.version_info.major >= 3:
+            
+            self.httpd = self.python3_server()
+            
+        else:
+            self.httpd = self.python2_server()
+    
+        self.mock_server_thread = Thread(target=self.httpd.serve_forever)
+        self.mock_server_thread.setDaemon(True)
+        self.mock_server_thread.start()
+
+
+    def python3_server(self):
+        
+        httpd = HTTPServer(self.server_address, SimpleHTTPRequestHandler)
+        return httpd
+        
+    def python2_server(self):
+        
+        httpd = SocketServer.TCPServer(self.server_address, SimpleHTTPServer.SimpleHTTPRequestHandler)
+        return httpd
+        
+    
+    
+
+
 ############################
 ### Mocking up rabbit mq ###
 ############################
 
-
-#set some enviromental variables
-os.environ["MINIO_SCHEME"] = "https"
-os.environ["MINIO_HOST"] = "minio.spotlightdata.co.uk"
-os.environ["MINIO_PORT"] = "443"
-os.environ["MINIO_ACCESS"] = "S4752LWGKTZ5F96J"
-os.environ["MINIO_SECRET"] = "M7U6PBYQJW2CJE6PGWWBHZ73TVQSXCGX"
+os.environ["MONITOR_URL"] = "http://fake-url"
 os.environ["AMQP_USER"] = "guest"
 os.environ["AMQP_PASS"] = "guest"
 os.environ["AMQP_HOST"] = "localhost"
 os.environ["AMQP_PORT"] = "5672"
-os.environ["MONITOR_URL"] = "http://fake-url"
 
 
+os.environ["MINIO_SCHEME"] = "http"
+os.environ["MINIO_HOST"] = "minio.testing.com"
+os.environ["MINIO_PORT"] = "500"
+os.environ["MINIO_ACCESS"] = "EXAMPLEACCESS"
+os.environ["MINIO_SECRET"] = "EXAMPLESECRET"
 
-
-#q = queue.LifoQueue()
+#simulate minio holding a tarball
+tarball_server = mock_tarball_server()
 
 #simulate the monitor
 mock_monitor = Start_Mock_Monitor_server()
 
 #perform the unit tests
 unittest.main()
+
