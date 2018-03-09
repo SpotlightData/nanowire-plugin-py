@@ -49,26 +49,14 @@ logger = logging.getLogger("nanowire-plugin")
 #create a class so we can feed things into the on_request function
 class on_request_class():
     
-    def __init__(self, connection, function, name, minio_client, output_channel, monitor_url, input_queue):
+    def __init__(self, connection, function, name, minio_client, output_channel, monitor_url):
         
         #check to see if the input function has the correct number of arguments. This changes depending on whether we're working
         #in python2 or python3 because apparantly unit testing is super important and my time isn't
-        if sys.version_info.major == 3:
-            if len(list(inspect.signature(function).parameters)) != 3 and list(inspect.signature(function).parameters) != ['self', 'nmo', 'jsonld', 'url']:
 
-                raise Exception("Bound function must take 3 arguments: nmo, jsonld and url")          
-            
-            if list(inspect.signature(function).parameters) != ['nmo', 'jsonld', 'url'] and list(inspect.signature(function).parameters) != ['self', 'nmo', 'jsonld', 'url']:
-                raise Exception("Bound function must use argument names: ['nmo', 'jsonld', 'url']. You have used %s"%list(inspect.signature(function).parameters))     
-            
-        elif sys.version_info.major ==2:
-            if len(inspect.getargspec(function)[0]) != 3 and inspect.getargspec(function)[0] != ['self', 'nmo', 'jsonld', 'url']:
-
-                raise Exception("Bound function must take 3 arguments: nmo, jsonld and url")          
-            
-            if inspect.getargspec(function)[0] != ['nmo', 'jsonld', 'url'] and inspect.getargspec(function)[0] != ['self', 'nmo', 'jsonld', 'url']:
-                raise Exception("Bound function must use argument names: [nmo, jsonld, url]. You have used %s"%inspect.getargspec(function)[0])     
-            
+        #check the function we're working with is valid        
+        validate_single_file_function(function)        
+        
         #setting up the class type checking
         if not isinstance(name, str):
             raise Exception("plugin name should be a string, it is actually %s"%name)
@@ -82,16 +70,24 @@ class on_request_class():
         
         if not output_channel.is_open:
             raise Exception("Output channel is closed")
-       
+            
+        #check the connection
+            
+        if not connection.is_open:
+            raise Exception("Connection to rabbitmq is closed")
+            
+            
+        #check the input queue is a pika queue, or a mock of one
+            
+
+
+        
         self.name = name
         self.connection = connection
         self.function = function
         self.minio_client = minio_client
         self.monitor_url = monitor_url
         self.output_channel = output_channel
-        self.input_queue = input_queue
-        #the alert queue is designed to check if the basic_consume is hanging
-        self.alert_queue = Queue()
         self.process_queue = Queue()
 
     def on_request(self, ch, method, props, body):
@@ -189,8 +185,8 @@ class on_request_class():
         #************** There needs to be some way of getting the url before we hit this
         
         try:
-            result = self.function(nmo, jsonld, url)
-            
+            #result = self.function(nmo, jsonld, url)
+            result = run_function(self.function, nmo, jsonld, url)
         except:
             result = traceback.format_exc()
         
@@ -277,7 +273,7 @@ def bind(function, name, version="1.0.0", pulserate=25):
     
     #all the stuff that needs to be passed into the callback function is stored
     #in this object so that it can be easily passed through
-    requester = on_request_class(connection, function, name, minio_client, output_channel, monitor_url, input_queue)
+    requester = on_request_class(connection, function, name, minio_client, output_channel, monitor_url)
     
     #set the queue length to one
     input_channel.basic_qos(prefetch_count=1)    
@@ -293,24 +289,73 @@ def bind(function, name, version="1.0.0", pulserate=25):
     #print("Created basic consumer")
     logger.info("Created basic consumer")
     #print("ENTERING THE FUNCTION")
-    '''
-    logger.info("*****************************************")
-    logger.info(dir(eg_queue))
-    
-    #This is the function that should let us know what we're looking at
-    logger.info(eg_queue.method.message_count)
-    logger.info("*****************************************")
-    '''
-    
-    #start the countdown to make sure the first consume does not hang
-    
+
         
     input_channel.start_consuming()
     
     logger.info("Past start consuming, not sure whats going on...")
 
 
+def validate_single_file_function(function):
+    
+    if sys.version_info.major == 3:
+        
+        arguments = list(inspect.signature(function).parameters)
+      
+    elif sys.version_info.major == 2:
+        
+        arguments = inspect.getargspec(function)[0]
+        
+    allowed = ['self', 'jsonld', 'nmo', 'url']
+    
+    arg_dict = set()
+    
+    for arg in arguments:
+        
+        if arg not in arg_dict:
+            arg_dict.add(arg)
+        else:
+            raise Exception("ARGUMENTS MAY NOT BE REPEATED")
+            
+        if arg not in allowed:
+            raise Exception("FUNCTION MAY ONLY USE ALLOWED ARGUMENTS, ALLOWED ARGUMENTS ARE: jsonld, nmo, url, YOU HAVE USED THE ARGUMENT %s"%arg)
+    
+    if 'jsonld' not in arguments:
+        
+        raise Exception("FUNCTION MUST TAKE jsonld AS AN ARGUMENT")
+        
 
+def validate_group_function(function):
+    
+    if sys.version_info.major == 3:
+        
+        arguments = list(inspect.signature(function).parameters)
+      
+    elif sys.version_info.major == 2:
+        
+        arguments = inspect.getargspec(function)[0]
+        
+    allowed = ['self', 'nmo', 'reader', 'writer']
+    
+    arg_dict = set()
+    
+    for arg in arguments:
+        
+        if arg not in arg_dict:
+            arg_dict.add(arg)
+        else:
+            raise Exception("ARGUMENTS MAY NOT BE REPEATED")
+            
+        if arg not in allowed:
+            raise Exception("FUNCTION MAY ONLY USE ALLOWED ARGUMENTS, ALLOWED ARGUMENTS ARE: reader, writer, nmo YOU HAVE USED THE ARGUMENT %s"%arg)
+    
+    if 'reader' not in arguments:
+        raise Exception("GROUP ANALYSIS FUNCTION MUST TAKE reader AS AN ARGUMENT. THIS IS A CLASS FOR READING DATA")
+        
+    if 'writer' not in arguments:
+        raise Exception("GROUP ANALYSIS FUNCTION MUST TAKE writer AS AN ARGUMENT. THIS IS A CLASS FOR WRITING RESULTS")
+    
+    
 
 def validate_payload(payload):
     """ensures payload includes the required metadata and this plugin is in there"""
@@ -396,9 +441,6 @@ def set_status(monitor_url, job_id, task_id, name, error=0):
         if not isinstance(task_id, str):
             raise Exception("task_id should be a string, it is %s, a %s"%(str(task_id), str(type(task_id))))
         
-        if not isinstance(name, str):
-            raise Exception("plugin name should be a string, it is %s, a %s"%(str(name), str(type(name))))
-            
     elif sys.version_info.major == 2:
         
         if not isinstance(job_id, unicode):
@@ -407,10 +449,10 @@ def set_status(monitor_url, job_id, task_id, name, error=0):
         if not isinstance(task_id, unicode):
             raise Exception("task_id should be in unicode in python2, it is %s, a %s"%(str(task_id), str(type(task_id))))
         
-        if not isinstance(name, str):
-            raise Exception("plugin name should be a string, it is %s, a %s"%(str(name), str(type(name))))
+    if not isinstance(name, str):
+        raise Exception("plugin name should be a string, it is %s, a %s"%(str(name), str(type(name))))
         
-    
+
     if error != 0:
         payload=json.dumps({
             "t": int(time.time() * 1000 * 1000),
@@ -556,23 +598,26 @@ def send(name, payload, output, input_channel, output_channel, method, minio_cli
     }
 
 
-def get_url(payload, minio_client):
+def get_url(payload, minio_cl):
     
+    if not isinstance(payload, dict):
+        raise Exception("The payload should be a dictionary, is actually: %s, a %s"%(str(payload), str(type(payload))))
     #create the path to the target in minio
     path = join(
         payload["nmo"]["task"]["task_id"],
         "input",
         "source",
         payload["nmo"]["source"]["name"])
-    
+        
     #set the url of the file being examined
     try:
-        minio_client.stat_object(payload["nmo"]["job"]["job_id"], path)
+        minio_cl.stat_object(payload["nmo"]["job"]["job_id"], path)
         
-        url = minio_client.presigned_get_object(payload["nmo"]["job"]["job_id"], path)
-        
+        url = minio_cl.presigned_get_object(payload["nmo"]["job"]["job_id"], path)
     #if we cant get the url from the monitor then we set it as None
-    except:
+    except Exception as exp:
+        
+        logger.warning("FALIED TO GET URL DUE TO: %s"%str(exp))
         url = None
     
     return url
@@ -674,12 +719,6 @@ def send_to_next_plugin(next_plugin, payload, output_channel):
         
         #send the result from this plugin to the next plugin in the pipeline
         send_result = output_channel.basic_publish("", next_plugin, json.dumps(payload), pika.BasicProperties(content_type='text/plain', delivery_mode=2))
-        
-        #test_result = output_channel.basic_get(queue=next_plugin, no_ack=True)        
-        
-        #if test_result != json.dumps(payload):
-        #    logger.warning("Plugin has not published correct message, message should be:\n %s \n but has come out as: \n %s \n")
-            
 
         #if the result sent ok then log that everything should be fine
         if send_result:
@@ -742,6 +781,93 @@ def clean_function_output(result, payload):
     else:
         return payload["jsonld"]
 
+def run_function(function, nmo, jsonld, url):
+
+
+    if sys.version_info.major == 3:
+      
+        arguments = inspect.signature(function).parameters
+        
+    elif sys.version_info.major == 2:
+        
+        arguments = inspect.getargspec(function)[0]
+    
+    arguments = inspect.getargspec(function)[0]
+    
+    #3 argument variations
+    if arguments == ['nmo', 'jsonld', 'url'] or arguments == ['self', 'nmo', 'jsonld', 'url']:
+        
+        result = function(nmo, jsonld, url)
+        
+        return result
+        
+    elif arguments == ['nmo', 'url', 'jsonld'] or arguments == ['self', 'nmo', 'url', 'jsonld']:
+        
+        result = function(nmo, url, jsonld)
+        
+        return result
+        
+    elif arguments == ['jsonld', 'nmo', 'url'] or arguments == ['self', 'jsonld', 'nmo', 'url']:
+        
+        result = function(jsonld, nmo, url)
+        
+        return result
+        
+    elif arguments == ['jsonld', 'url', 'nmo'] or arguments == ['self', 'jsonld', 'url', 'nmo']:
+        
+        result = function(jsonld, url, nmo)
+        
+        return result
+        
+    elif arguments == ['url', 'nmo', 'jsonld'] or arguments == ['self', 'url', 'nmo', 'jsonld']:
+        
+        result = function(url, nmo, jsonld)
+        
+        return result
+        
+    elif arguments == ['url', 'jsonld', 'nmo'] or arguments == ['self', 'url', 'jsonld', 'nmo']:
+        
+        result = function(url, jsonld, nmo)
+        
+        return result
+        
+        
+    #2 argument variations
+    elif arguments == ['url', 'jsonld'] or arguments == ['self', 'url', 'jsonld']:
+        
+        result = function(url, jsonld)
+        
+        return result
+
+    elif arguments == ['jsonld', 'url'] or arguments == ['self', 'jsonld', 'url']:
+        
+        result = function(jsonld, url)
+        
+        return result
+
+    elif arguments == ['nmo', 'jsonld'] or arguments == ['self', 'nmo', 'jsonld']:
+        
+        result = function(nmo, jsonld)
+        
+        return result
+        
+    elif arguments == ['jsonld', 'nmo'] or arguments == ['self', 'jsonld', 'nmo']:
+        
+        result = function(jsonld, nmo)
+        
+        return result
+        
+    #1 argument variations
+    elif arguments == ['jsonld'] or arguments == ['self', 'jsonld']:
+        
+        result = function(jsonld)
+        
+        return result
+
+
+    else:
+        
+        raise Exception("FUNCTION MUST ACCEPT VALID ARGUMENTS, CURRENT ARGUMENTS ARE %s"%str(arguments))
 
 
 ############################
@@ -753,6 +879,9 @@ def clean_function_output(result, payload):
 #check the nmo to see if we're working with groups
 def check_for_group(nmo):
     
+    if not isinstance(nmo, dict):
+        raise Exception('nmo should be a dictionary, is actually: %s, a %s'%(str(nmo), str(type(nmo))))
+    
     try:
         result = nmo['source']['misc']['isGroup']
     except:
@@ -762,6 +891,10 @@ def check_for_group(nmo):
 
 #download a tarball from a url
 def pull_tarball_url(nmo):
+    
+    
+    if not isinstance(nmo, dict):
+        raise Exception('nmo should be a dictionary, is actually: %s, a %s'%(str(nmo), str(type(nmo))))
     
     try:
         url = nmo['source']['misc']['cacheURL']
@@ -776,16 +909,21 @@ def pull_and_extract_tarball(tar_url, cache_folder_name):
     
     logger.info("DRAWING TARBALL FROM URL")
     
-    #different libraries for interacting with urls in python 2 and python 3
-    if sys.version_info.major >= 3:
-        file_tmp = urllib.request.urlretrieve(tar_url, filename=None)[0]
-    else:
-        file_tmp = urllib.urlretrieve(tar_url, filename=None)[0]
-
+    if not isinstance(cache_folder_name, str):
+        raise Exception("The cache folder should be a creatable path, is actually: %s, a %s"%(str(cache_folder_name), str(type(cache_folder_name))))
     
-    base_name = os.path.basename(tar_url)
+    try:
+        #different libraries for interacting with urls in python 2 and python 3
+        if sys.version_info.major >= 3:
+            file_tmp = urllib.request.urlretrieve(tar_url, filename=None)[0]
+        else:
+            file_tmp = urllib.urlretrieve(tar_url, filename=None)[0]
+        
+    except Exception as exp:
+        raise Exception("COULD NOT FIND TARBALL AT: %s, due to %s"%(tar_url, str(exp)))
     
-    logger.info("BASENAME IS :- %s"%base_name)
+    #base_name = os.path.basename(tar_url)
+    
 
     #except Exception as e:
     #    logger.info("COULD NOT PULL TARBALL BECAUSE: %s"%str(e))
@@ -798,6 +936,10 @@ def pull_and_extract_tarball(tar_url, cache_folder_name):
 
 def read_jsonld(filename):
     
+    if not isinstance(filename, str):
+        
+        raise Exception("Filename must be a string, is actually %s, a %s"%(str(filename), str(type(filename))))
+    
     f = open(filename, 'r')
     raw = f.read()
     f.close()
@@ -809,13 +951,14 @@ class writer():
     
     def __init__(self, nmo):
         
+        if not isinstance(nmo, dict):
+            raise Exception("nmo should be a dictionary, is actually: %s, a %s"%(str(nmo), str(type(nmo))))
+        
         self.nmo = nmo
         self.out_folder = '/output'
         self.output_filename = 'results.json'
         self.out_file = os.path.join(self.out_folder, self.output_filename)
         self.initialise_output_file()
-        
-        
         
     def initialise_output_file(self):
     
@@ -866,6 +1009,13 @@ class writer():
     
     def append_task(self, single_file):
         
+        if sys.version_info.major >= 3:
+            if 'nanowire_plugin.single_file' not in str(type(single_file)):
+                raise Exception("You can only write a nanowire plugin single_file object to the output using the append task command. You have tried to send an invalid %s object"%str(type(single_file)))
+        else:
+            if 'nanowire_plugin.single_file' not in str(single_file):
+                raise Exception("You can only write a nanowire plugin single_file object to the output using the append task command. You have tried to send an invalid %s object"%str(type(single_file)))
+ 
         #we only save a single file result if there have been changes
         if single_file.change_dict != {}:    
         
@@ -907,22 +1057,31 @@ class reader():
     #a function to create a generator to pull data
     def file_generator(self):
         
-        for file in self.files:
+        for file_dat in self.files:
             
-            filename = os.path.join(self.file_cache, file)
+            filename = os.path.join(self.file_cache, file_dat)
             yield single_file(filename)
 
 class Minio_tool():
     
     def __init__(self, minio_client):
         
+        if "minio.api.Minio" not in str(type(minio_client)):
+            
+            raise Exception("Minio_tool requires a minio client to initialise, has actually been given: %s, a %s"%(str(minio_client), str(type(minio_client))))
+        
         self.minioClient = minio_client
         
         
     def send_file(self, filename, nmo, plugin_name):
         
-        bucket_name = nmo['job']['job_id']
-        task_id = nmo['task']['task_id']
+        
+        try:        
+            bucket_name = nmo['job']['job_id']
+            task_id = nmo['task']['task_id']
+            
+        except:
+            raise Exception("Key information missing from nmo either job_id or task_id. nmo is: %s"%json.dumps(nmo))
         
         logger.info("ENSURING EXISTANCE OF BUCKET: %s"%bucket_name)
         #first check the bucket we want to save to exists
@@ -934,6 +1093,9 @@ class Minio_tool():
         
         
         logger.info("READING SAVE FILE")
+        if not os.path.exists(filename):
+            raise Exception("Tried to send non-existant file: %s"%filename)
+        
         file_stat = os.stat(filename)
         file_data = open(filename, 'rb')
         
@@ -945,6 +1107,19 @@ class Minio_tool():
         
         #add to the payload locations
         
+        if 'source' in nmo.keys():
+            p1 = True
+            if 'misc' in nmo['source'].keys():
+                p1 = True
+                
+            else:
+                p1 = False
+        else:
+            p1 =  False
+            
+        if not p1:
+            raise Exception("Misc field missing from nmo. nmo is: %s"%json.dumps(nmo))
+        
         try:
             nmo['source']['misc']['storePayloads'].append(save_name)
         except:
@@ -955,9 +1130,11 @@ class Minio_tool():
         
     def clean_up_after_sending(self):
         
-        print("clearing localy")
-        shutil.rmtree('/cache')
-        shutil.rmtree('/output')
+        if os.path.exists('/cache'):
+            shutil.rmtree('/cache')
+            
+        if os.path.exists('/output'):
+            shutil.rmtree('/output')
         
 
 #use this class to make sure all the data from each file stays together
@@ -967,38 +1144,69 @@ class single_file():
         
         file_cache = '/cache' 
         
+        if not os.path.exists(os.path.join(file_cache, filename)):
+            raise Exception("File to be loaded does not exist: %s"%filename)
+
         self.filename = filename
         self.jsonld = read_jsonld(os.path.join(file_cache, filename))
         self.change_dict = {}
         
         
-def run_function(function , read_tool, write_tool, nmo):
+def run_group_function(function , read_tool, write_tool, nmo):
     
     arguments = inspect.getargspec(function)[0]
     
-    if arguments == ['reader', 'writer', 'nmo']:
+    #3 argument calls
+    if arguments == ['reader', 'writer', 'nmo'] or arguments == ['self', 'reader', 'writer', 'nmo']:
         
         function(read_tool, write_tool, nmo)
         
         return write_tool.nmo
         
-    elif arguments == ['self', 'reader', 'writer', 'nmo']:
+    if arguments == ['reader', 'nmo', 'writer'] or arguments == ['self', 'reader', 'nmo', 'writer']:
         
-        function(read_tool, write_tool, nmo)
+        function(read_tool, nmo, write_tool)
         
         return write_tool.nmo
         
-    elif arguments == ['reader', 'writer']:
+    elif arguments == ['nmo', 'reader', 'writer'] or arguments == ['self', 'nmo', 'reader', 'writer']:
+        
+        function(nmo, read_tool, write_tool)
+        
+        return write_tool.nmo
+        
+    elif arguments == ['nmo', 'writer', 'reader'] or arguments == ['self', 'nmo', 'writer', 'reader']:
+        
+        function(nmo, write_tool, read_tool)
+        
+        return write_tool.nmo
+        
+    elif arguments == ['writer', 'reader', 'nmo'] or arguments == ['self', 'writer', 'reader', 'nmo']:
+        
+        function(write_tool, read_tool, nmo)
+        
+        return write_tool.nmo
+        
+    elif arguments == ['writer', 'nmo', 'reader'] or arguments == ['self', 'writer', 'nmo', 'reader']:
+        
+        function(write_tool, nmo, read_tool)
+        
+        return write_tool.nmo
+    
+    
+    #2 arguments calls
+    elif arguments == ['reader', 'writer'] or arguments == ['self', 'reader', 'writer']:
         
         function(read_tool, write_tool)
         
         return write_tool.nmo
         
-    elif arguments == ['self', 'reader', 'writer']:
+    elif arguments == ['writer', 'reader'] or arguments == ['self', 'writer', 'reader']:
         
-        function(read_tool, write_tool)
+        function(write_tool, read_tool)
         
         return write_tool.nmo
+        
 
     else:
         
@@ -1013,18 +1221,10 @@ def group_bind(function, name, version="1.0.0", pulserate=25):
     
     if not isinstance(name, str):
         raise Exception("plugin name should be a string, it is actually %s"%name)
-    '''
-    #check to see if the input function has the correct number of arguments
-    if sys.version_info.major == 3:
-      
-        if list(inspect.signature(function).parameters) != ['nmo', 'jsonld', 'url'] and list(inspect.signature(function).parameters) != ['self', 'nmo', 'jsonld', 'url']:
-            raise Exception("Bound function must use argument names: [nmo, jsonld, url]. You have used %s"%list(inspect.signature(function).parameters))     
         
-    elif sys.version_info.major == 2:
-        
-        if inspect.getargspec(function)[0] != ['nmo', 'jsonld', 'url'] and inspect.getargspec(function)[0] != ['self', 'nmo', 'jsonld', 'url']:
-            raise Exception("Bound function must use argument names: [nmo, jsonld, url]. You have used %s"%inspect.getargspec(function)[0])
-            '''
+    if not isinstance(pulserate, int):
+        raise Exception("Pulserate should be an intiger, is actually %s, a %s"%(str(pulserate), str(type(pulserate))))
+
     #set up the logging
     logger.setLevel(logging.DEBUG)
     
@@ -1086,7 +1286,7 @@ def group_bind(function, name, version="1.0.0", pulserate=25):
     
     #all the stuff that needs to be passed into the callback function is stored
     #in this object so that it can be easily passed through
-    group_requester = group_on_request_class(connection, function, name, minio_client, output_channel, monitor_url, input_queue)
+    group_requester = group_on_request_class(connection, function, name, minio_client, output_channel, monitor_url)
     
     #set the queue length to one
     input_channel.basic_qos(prefetch_count=1)    
@@ -1094,18 +1294,11 @@ def group_bind(function, name, version="1.0.0", pulserate=25):
     #set up the function for running the users code on the input message
     input_channel.basic_consume(group_requester.on_request, queue=name, no_ack=False)
     
-    
-    #thread = threading.Thread(target=requester.countdown_timer.begin_countdown)
-    #thread.setDaemon(True)
-    #thread.start()
-    
     #print("Created basic consumer")
     logger.info("Created basic consumer")
     #print("ENTERING THE FUNCTION")
     
-    #start the countdown to make sure the first consume does not hang
-    
-        
+    #start the countdown to make sure the first consume does not hang        
     input_channel.start_consuming()
     
     logger.info("Past start consuming, not sure whats going on...")
@@ -1116,27 +1309,14 @@ def group_bind(function, name, version="1.0.0", pulserate=25):
 #create a class so we can feed things into the on_request function
 class group_on_request_class():
     
-    def __init__(self, connection, function, name, minio_client, output_channel, monitor_url, input_queue):
+    def __init__(self, connection, function, name, minio_client, output_channel, monitor_url):
         
         #check to see if the input function has the correct number of arguments. This changes depending on whether we're working
         #in python2 or python3 because apparantly unit testing is super important and my time isn't
-        '''
-        if sys.version_info.major == 3:
-            if len(list(inspect.signature(function).parameters)) != 3 and list(inspect.signature(function).parameters) != ['self', 'nmo', 'jsonld', 'url']:
 
-                raise Exception("Bound function must take 3 arguments: nmo, jsonld and url")          
+        #check the function we're going to work with            
+        validate_group_function(function)            
             
-            if list(inspect.signature(function).parameters) != ['nmo', 'jsonld', 'url'] and list(inspect.signature(function).parameters) != ['self', 'nmo', 'jsonld', 'url']:
-                raise Exception("Bound function must use argument names: ['nmo', 'jsonld', 'url']. You have used %s"%list(inspect.signature(function).parameters))     
-            
-        elif sys.version_info.major ==2:
-            if len(inspect.getargspec(function)[0]) != 3 and inspect.getargspec(function)[0] != ['self', 'nmo', 'jsonld', 'url']:
-
-                raise Exception("Bound function must take 3 arguments: nmo, jsonld and url")          
-            
-            if inspect.getargspec(function)[0] != ['nmo', 'jsonld', 'url'] and inspect.getargspec(function)[0] != ['self', 'nmo', 'jsonld', 'url']:
-                raise Exception("Bound function must use argument names: [nmo, jsonld, url]. You have used %s"%inspect.getargspec(function)[0])     
-            '''
         #setting up the class type checking
         if not isinstance(name, str):
             raise Exception("plugin name should be a string, it is actually %s"%name)
@@ -1157,12 +1337,11 @@ class group_on_request_class():
         self.minio_client = minio_client
         self.monitor_url = monitor_url
         self.output_channel = output_channel
-        self.input_queue = input_queue
 
         self.process_queue = Queue()
 
     def on_request(self, ch, method, props, body):
-        
+
         #check the channel is open
         if not ch.is_open:
             raise Exception("Input channel is closed")
@@ -1171,7 +1350,6 @@ class group_on_request_class():
         if not isinstance(body, bytes):
             raise Exception("The body data should be a byte stream, it is actually %s, %s"%(body, type(body)))
 
-        
         #set up logging inside the server functions
         logger.setLevel(logging.DEBUG)
         
@@ -1247,8 +1425,8 @@ class group_on_request_class():
 
     def run_processing_thread(self):
         
-        logger.info("RUNNING PROCESSING THREAD")
-        
+        logger.info("RUNNING GROUP PROCESSING THREAD")
+        result = ''
         #logger.info("IN PAYLOAD IS:-")
         #logger.info(json.dumps(self.payload))
         #logger.info("++++++++++++++++++++++++++++++++++++++++++++++++++++++")
@@ -1276,10 +1454,9 @@ class group_on_request_class():
             
             try:
                 logger.info("STARTING THE MAIN FUNCTION")
-                nmo = run_function(self.function , read_tool, write_tool, nmo)
+                nmo = run_group_function(self.function , read_tool, write_tool, nmo)
                 
                 
-
                 
             except:
                 result = traceback.format_exc()
@@ -1287,22 +1464,24 @@ class group_on_request_class():
                 
         else:
             result = "GROUP TARBALL IS MISSING"
-            
+
         #send the result to minio and close everything down
         minio_sender = Minio_tool(self.minio_client)
+        
+        
+        if result != "GROUP TARBALL IS MISSING":
+            try:
+                nmo = minio_sender.send_file('/output/results.json', nmo, self.name)
+                result = {'nmo':nmo}
 
-        try:
-            nmo = minio_sender.send_file('/output/results.json', nmo, self.name)
-            result = {'nmo':nmo}
+                
+            except Exception as exp:
+                logger.info("FAILED TO SEND RESULT: %s"%str(exp))
+                result = exp
             
-            
-        except Exception as exp:
-            logger.info("FAILED TO SEND RESULT: %s"%str(exp))
-            result = exp
-            
-        logger.info("RETURNED PAYLOAD:-")
-        logger.info(json.dumps(result))
-        logger.info("************************************")
+        #logger.info("RETURNED PAYLOAD:-")
+        #logger.info(json.dumps(result))
+        #logger.info("************************************")
         
         #put our result onto the queue so that it can be sent through the system
         self.process_queue.put_nowait(result)
