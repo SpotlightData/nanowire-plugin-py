@@ -26,7 +26,7 @@ import pika
 from minio import Minio
 import datetime
 import shutil
-
+import psutil
 
 #from minio.error import AccessDenied
 
@@ -44,7 +44,30 @@ else:
 #set up the logger globally
 logger = logging.getLogger("nanowire-plugin")
 
-#trying another wacky plan to try and fix the hanging problem
+#trying to fix the memory limits problems
+def check_memory(processing_thread_handel):
+#perform a memory check here too
+                usage = psutil.virtual_memory().percent
+                if usage > 95:
+                    limit = psutil.virtual_memory().total >> 20
+                    #We are using too much memory and must kill the pod telling
+                    #the user to send smaller files
+
+                    #step 1 is to terminate the running thread
+                    proc_thread.terminate()
+                    
+                    #now construct an error message to send to the monitor
+                    error = "%s is using too much memory, limit is %s Mb and you have used %s%% of avalible memory"%(self.name, str(limit), str(usage))
+                    #send the error message to the monitor
+                    inform_monitor(self.payload, self.name, self.monitor_url, self.minio_client, error)
+
+                    #send the payload to the next plugin without my blessing
+                    send(self.name, self.payload, self.payload, ch, self.output_channel, method, self.minio_client, self.monitor_url)
+                    #finally kill the pod to restart it
+                    sys.exit()
+
+
+
 
 #create a class so we can feed things into the on_request function
 class on_request_class():
@@ -147,7 +170,10 @@ class on_request_class():
             if time_since_last_heartbeat >= pacemaker_pluserate:
                 self.connection.process_data_events()
                 
+                #perform a memory check here
+                self.check_memory(proc_thread, ch, method)
                 
+                #reset the timer on the pacemaker
                 beat_time = time.time()
                 time_since_last_heartbeat = 0
             
@@ -193,6 +219,28 @@ class on_request_class():
         self.process_queue.put_nowait(result)
         
         
+    def check_memory(self, processing_thread_handle, ch, method):
+        #perform a memory check here too
+        usage = psutil.virtual_memory().percent
+        if usage > 95:
+            limit = psutil.virtual_memory().total >> 20
+            #We are using too much memory and must kill the pod telling
+            #the user to send smaller files
+
+            #step 1 is to terminate the running thread
+            processing_thread_handle.terminate()
+            
+            #now construct an error message to send to the monitor
+            error = "%s is using too much memory, limit is %s Mb and you have used %s%% of avalible memory"%(self.name, str(limit), str(usage))
+            #send the error message to the monitor
+            inform_monitor(self.payload, self.name, self.monitor_url, self.minio_client, error)
+
+            #send the payload to the next plugin without my blessing
+            send(self.name, self.payload, self.payload, ch, self.output_channel, method, self.minio_client, self.monitor_url)
+            #finally kill the pod to restart it
+            sys.exit()
+        
+        
         
 
 def bind(function, name, version="1.0.0", pulserate=25):
@@ -201,17 +249,6 @@ def bind(function, name, version="1.0.0", pulserate=25):
     if not isinstance(name, str):
         raise Exception("plugin name should be a string, it is actually %s"%name)
     
-    #check to see if the input function has the correct number of arguments
-    if sys.version_info.major == 3:
-      
-        if list(inspect.signature(function).parameters) != ['nmo', 'jsonld', 'url'] and list(inspect.signature(function).parameters) != ['self', 'nmo', 'jsonld', 'url']:
-            raise Exception("Bound function must use argument names: [nmo, jsonld, url]. You have used %s"%list(inspect.signature(function).parameters))     
-        
-    elif sys.version_info.major == 2:
-        
-        if inspect.getargspec(function)[0] != ['nmo', 'jsonld', 'url'] and inspect.getargspec(function)[0] != ['self', 'nmo', 'jsonld', 'url']:
-            raise Exception("Bound function must use argument names: [nmo, jsonld, url]. You have used %s"%inspect.getargspec(function)[0])
-
     #set up the logging
     logger.setLevel(logging.DEBUG)
     
