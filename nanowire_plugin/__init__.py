@@ -44,29 +44,6 @@ else:
 #set up the logger globally
 logger = logging.getLogger("nanowire-plugin")
 
-#trying to fix the memory limits problems
-def check_memory(processing_thread_handel):
-#perform a memory check here too
-                usage = psutil.virtual_memory().percent
-                if usage > 95:
-                    limit = psutil.virtual_memory().total >> 20
-                    #We are using too much memory and must kill the pod telling
-                    #the user to send smaller files
-
-                    #step 1 is to terminate the running thread
-                    proc_thread.terminate()
-                    
-                    #now construct an error message to send to the monitor
-                    error = "%s is using too much memory, limit is %s Mb and you have used %s%% of avalible memory"%(self.name, str(limit), str(usage))
-                    #send the error message to the monitor
-                    inform_monitor(self.payload, self.name, self.monitor_url, self.minio_client, error)
-
-                    #send the payload to the next plugin without my blessing
-                    send(self.name, self.payload, self.payload, ch, self.output_channel, method, self.minio_client, self.monitor_url)
-                    #finally kill the pod to restart it
-                    sys.exit()
-
-
 
 
 #create a class so we can feed things into the on_request function
