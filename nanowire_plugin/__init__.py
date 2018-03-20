@@ -26,7 +26,6 @@ import pika
 from minio import Minio
 import datetime
 import shutil
-import psutil
 
 #from minio.error import AccessDenied
 
@@ -78,10 +77,6 @@ class on_request_class():
             
             
         #check the input queue is a pika queue, or a mock of one
-            
-
-
-        
         self.name = name
         self.connection = connection
         self.function = function
@@ -147,9 +142,6 @@ class on_request_class():
             if time_since_last_heartbeat >= pacemaker_pluserate:
                 self.connection.process_data_events()
                 
-                #perform a memory check here
-                self.check_memory(proc_thread, ch, method)
-                
                 #reset the timer on the pacemaker
                 beat_time = time.time()
                 time_since_last_heartbeat = 0
@@ -196,27 +188,6 @@ class on_request_class():
         self.process_queue.put_nowait(result)
         
         
-    def check_memory(self, processing_thread_handle, ch, method):
-        #perform a memory check here too
-        usage = psutil.virtual_memory().percent
-        if usage > 95:
-            limit = psutil.virtual_memory().total >> 20
-            #We are using too much memory and must kill the pod telling
-            #the user to send smaller files
-
-            #step 1 is to terminate the running thread
-            processing_thread_handle.terminate()
-            
-            #now construct an error message to send to the monitor
-            error = "%s is using too much memory, limit is %s Mb and you have used %s%% of avalible memory"%(self.name, str(limit), str(usage))
-            #send the error message to the monitor
-            inform_monitor(self.payload, self.name, self.monitor_url, self.minio_client, error)
-
-            #send the payload to the next plugin without my blessing
-            send(self.name, self.payload, self.payload, ch, self.output_channel, method, self.minio_client, self.monitor_url)
-            #finally kill the pod to restart it
-            sys.exit()
-        
         
         
 
@@ -238,23 +209,36 @@ def bind(function, name, version="1.0.0", pulserate=25):
     logger.info("initialising plugin: %s"%name)
 
 
-
-    if environ["AMQP_SECURE"] == "1":
-        
-        #set the parameters for pika
-        parameters = pika.ConnectionParameters(
-            host=environ["AMQP_HOST"],
-            port=int(environ["AMQP_PORT"]),
-            credentials=pika.PlainCredentials(environ["AMQP_USER"], environ["AMQP_PASS"]),
-            heartbeat=pulserate,
-            socket_timeout=10,
-            connection_attempts=1,
-            retry_delay = 5,
-            blocked_connection_timeout=120,
-            ssl = True)
+    try:
+        if environ["AMQP_SECURE"] == "1":
             
-    else:
-        
+            #set the parameters for pika
+            parameters = pika.ConnectionParameters(
+                host=environ["AMQP_HOST"],
+                port=int(environ["AMQP_PORT"]),
+                credentials=pika.PlainCredentials(environ["AMQP_USER"], environ["AMQP_PASS"]),
+                heartbeat=pulserate,
+                socket_timeout=10,
+                connection_attempts=1,
+                retry_delay = 5,
+                blocked_connection_timeout=120,
+                ssl = True)
+            
+        else:
+            
+            #set the parameters for pika
+            parameters = pika.ConnectionParameters(
+                host=environ["AMQP_HOST"],
+                port=int(environ["AMQP_PORT"]),
+                credentials=pika.PlainCredentials(environ["AMQP_USER"], environ["AMQP_PASS"]),
+                heartbeat=pulserate,
+                socket_timeout=10,
+                connection_attempts=1,
+                retry_delay = 5,
+                blocked_connection_timeout=120,
+                ssl = False)
+                
+    except:
         #set the parameters for pika
         parameters = pika.ConnectionParameters(
             host=environ["AMQP_HOST"],
@@ -1269,22 +1253,36 @@ def group_bind(function, name, version="1.0.0", pulserate=25):
     
     logger.info("initialising plugin: %s"%name)
 
-    if environ["AMQP_SECURE"] == "1":
-        
-        #set the parameters for pika
-        parameters = pika.ConnectionParameters(
-            host=environ["AMQP_HOST"],
-            port=int(environ["AMQP_PORT"]),
-            credentials=pika.PlainCredentials(environ["AMQP_USER"], environ["AMQP_PASS"]),
-            heartbeat=pulserate,
-            socket_timeout=10,
-            connection_attempts=1,
-            retry_delay = 5,
-            blocked_connection_timeout=120,
-            ssl = True)
+    try:
+        if environ["AMQP_SECURE"] == "1":
             
-    else:
-        
+            #set the parameters for pika
+            parameters = pika.ConnectionParameters(
+                host=environ["AMQP_HOST"],
+                port=int(environ["AMQP_PORT"]),
+                credentials=pika.PlainCredentials(environ["AMQP_USER"], environ["AMQP_PASS"]),
+                heartbeat=pulserate,
+                socket_timeout=10,
+                connection_attempts=1,
+                retry_delay = 5,
+                blocked_connection_timeout=120,
+                ssl = True)
+            
+        else:
+            
+            #set the parameters for pika
+            parameters = pika.ConnectionParameters(
+                host=environ["AMQP_HOST"],
+                port=int(environ["AMQP_PORT"]),
+                credentials=pika.PlainCredentials(environ["AMQP_USER"], environ["AMQP_PASS"]),
+                heartbeat=pulserate,
+                socket_timeout=10,
+                connection_attempts=1,
+                retry_delay = 5,
+                blocked_connection_timeout=120,
+                ssl = False)
+                
+    except:
         #set the parameters for pika
         parameters = pika.ConnectionParameters(
             host=environ["AMQP_HOST"],
@@ -1446,9 +1444,6 @@ class group_on_request_class():
             if time_since_last_heartbeat >= pacemaker_pluserate:
                 self.connection.process_data_events()
                 
-                #check the memory situation
-                self.check_memory(self, proc_thread, ch, method)
-                
                 #reset the heartbeat counter
                 beat_time = time.time()
                 time_since_last_heartbeat = 0
@@ -1539,23 +1534,3 @@ class group_on_request_class():
         #put our result onto the queue so that it can be sent through the system
         self.process_queue.put_nowait(result)
         
-    def check_memory(self, processing_thread_handle, ch, method):
-        #perform a memory check here too
-        usage = psutil.virtual_memory().percent
-        if usage > 95:
-            limit = psutil.virtual_memory().total >> 20
-            #We are using too much memory and must kill the pod telling
-            #the user to send smaller files
-
-            #step 1 is to terminate the running thread
-            processing_thread_handle.terminate()
-            
-            #now construct an error message to send to the monitor
-            error = "%s is using too much memory, limit is %s Mb and you have used %s%% of avalible memory"%(self.name, str(limit), str(usage))
-            #send the error message to the monitor
-            inform_monitor(self.payload, self.name, self.monitor_url, self.minio_client, error)
-
-            #send the payload to the next plugin without my blessing
-            send(self.name, self.payload, self.payload, ch, self.output_channel, method, self.minio_client, self.monitor_url)
-            #finally kill the pod to restart it
-            sys.exit()
