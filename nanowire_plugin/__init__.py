@@ -1257,11 +1257,8 @@ def group_bind(function, name, version="1.0.0", pulserate=25):
                 port=int(environ["AMQP_PORT"]),
                 credentials=pika.PlainCredentials(environ["AMQP_USER"], environ["AMQP_PASS"]),
                 heartbeat=pulserate,
-                socket_timeout=10,
-                connection_attempts=1,
-                retry_delay = 5,
-                blocked_connection_timeout=120,
-                ssl = True)
+                ssl = True,
+                ssl_options = {'ssl_version':ssl.PROTOCOL_TLSv1_2})
             
         else:
             
@@ -1271,10 +1268,6 @@ def group_bind(function, name, version="1.0.0", pulserate=25):
                 port=int(environ["AMQP_PORT"]),
                 credentials=pika.PlainCredentials(environ["AMQP_USER"], environ["AMQP_PASS"]),
                 heartbeat=pulserate,
-                socket_timeout=10,
-                connection_attempts=1,
-                retry_delay = 5,
-                blocked_connection_timeout=120,
                 ssl = False)
                 
     except:
@@ -1284,10 +1277,6 @@ def group_bind(function, name, version="1.0.0", pulserate=25):
             port=int(environ["AMQP_PORT"]),
             credentials=pika.PlainCredentials(environ["AMQP_USER"], environ["AMQP_PASS"]),
             heartbeat=pulserate,
-            socket_timeout=10,
-            connection_attempts=1,
-            retry_delay = 5,
-            blocked_connection_timeout=120,
             ssl = False)
 
     #set up pika connection channels between rabbitmq and python
