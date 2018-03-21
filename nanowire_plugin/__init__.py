@@ -277,7 +277,7 @@ def bind(function, name, version="1.0.0", pulserate=25):
         environ["MINIO_HOST"] + ":" + environ["MINIO_PORT"],
         access_key=environ["MINIO_ACCESS"],
         secret_key=environ["MINIO_SECRET"],
-        secure=True if environ["MINIO_SCHEME"] == "https" else False).WithSSL()
+        secure=True if environ["MINIO_SCHEME"] == "https" else False)
     
     '''
     #use a boto client to try and avoid some serious bugs with minio
@@ -1331,7 +1331,7 @@ def group_bind(function, name, version="1.0.0", pulserate=25):
         environ["MINIO_HOST"] + ":" + environ["MINIO_PORT"],
         access_key=environ["MINIO_ACCESS"],
         secret_key=environ["MINIO_SECRET"],
-        secure=True if environ["MINIO_SCHEME"] == "https" else False).WithSSL()
+        secure=True if environ["MINIO_SCHEME"] == "https" else False)
         
     minio_client.set_app_info(name, version)
 
