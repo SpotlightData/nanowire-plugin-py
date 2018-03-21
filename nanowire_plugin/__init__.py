@@ -9,6 +9,12 @@ Created on Wed Oct 25 11:30:46 2017
 """
 Provides a `bind` function to plugins so they can simply bind a function to a queue.
 """
+
+from gevent import monkey
+
+monkey.patch_all()
+
+
 import os
 import tarfile
 import traceback
@@ -29,9 +35,7 @@ from minio import Minio
 import datetime
 import shutil
 
-from gevent import monkey
 
-monkey.patch_all()
 
 #from minio.error import AccessDenied
 
