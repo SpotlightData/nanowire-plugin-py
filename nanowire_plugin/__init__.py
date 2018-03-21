@@ -18,6 +18,8 @@ from os import environ
 from os.path import join
 import inspect
 
+import ssl
+
 import threading
 
 import time
@@ -222,7 +224,8 @@ def bind(function, name, version="1.0.0", pulserate=25):
                 connection_attempts=1,
                 retry_delay = 5,
                 blocked_connection_timeout=120,
-                ssl = True)
+                ssl = True,
+                ssl_options = {'ssl_version':ssl.PROTOCOL_TLSv1_2})
             
         else:
             
