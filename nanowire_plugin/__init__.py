@@ -34,7 +34,6 @@ import pika
 import datetime
 import shutil
 
-import boto3
 
 
 #from minio.error import AccessDenied
