@@ -221,7 +221,7 @@ def bind(function, name, version="1.0.0", pulserate=25):
 
     try:
         if environ["AMQP_SECURE"] == "1":
-            
+            logger.info("Using ssl connection")
             #set the parameters for pika
             parameters = pika.ConnectionParameters(
                 host=environ["AMQP_HOST"],
@@ -236,7 +236,7 @@ def bind(function, name, version="1.0.0", pulserate=25):
                 ssl_options = {'ssl_version':ssl.PROTOCOL_TLSv1_2})
             
         else:
-            
+            logger.info("Not using ssl")
             #set the parameters for pika
             parameters = pika.ConnectionParameters(
                 host=environ["AMQP_HOST"],
@@ -250,6 +250,7 @@ def bind(function, name, version="1.0.0", pulserate=25):
                 ssl = False)
                 
     except:
+        logger.info("Not using ssl")
         #set the parameters for pika
         parameters = pika.ConnectionParameters(
             host=environ["AMQP_HOST"],
