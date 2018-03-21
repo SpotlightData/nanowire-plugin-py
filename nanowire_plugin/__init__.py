@@ -24,7 +24,7 @@ from os import environ
 from os.path import join
 import inspect
 
-from ssl import PROTOCOL_TLSv1_2
+#from ssl import PROTOCOL_TLSv1_2
 
 import threading
 
@@ -232,8 +232,7 @@ def bind(function, name, version="1.0.0", pulserate=25):
                 connection_attempts=1,
                 retry_delay = 5,
                 blocked_connection_timeout=120,
-                ssl = True,
-                ssl_options = {'ssl_version':PROTOCOL_TLSv1_2})
+                ssl = True)
             
         else:
             logger.info("Not using ssl")
@@ -1279,8 +1278,7 @@ def group_bind(function, name, version="1.0.0", pulserate=25):
                 connection_attempts=1,
                 retry_delay = 5,
                 blocked_connection_timeout=120,
-                ssl = True,
-                ssl_options = {'ssl_version':PROTOCOL_TLSv1_2})
+                ssl = True)
             
         else:
             
