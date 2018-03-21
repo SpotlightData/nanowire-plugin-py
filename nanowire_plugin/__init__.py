@@ -34,6 +34,7 @@ import pika
 import datetime
 import shutil
 
+import boto3
 
 
 #from minio.error import AccessDenied
@@ -277,8 +278,17 @@ def bind(function, name, version="1.0.0", pulserate=25):
         environ["MINIO_HOST"] + ":" + environ["MINIO_PORT"],
         access_key=environ["MINIO_ACCESS"],
         secret_key=environ["MINIO_SECRET"],
-        secure=True if environ["MINIO_SCHEME"] == "https" else False)
-        
+        secure=True if environ["MINIO_SCHEME"] == "https" else False).WithSSL()
+    
+    '''
+    #use a boto client to try and avoid some serious bugs with minio
+    session = boto3.session.Session()
+    
+    minio_client = session.client('s3', region_name='ams3', endpoint_url=environ['MINIO_HOST']+":"+environ['MINIO_PORT'],
+                                  aws_access_key_id=environ['MINIO_ACCESS'],
+                                    aws_secret_access_key=environ['MINIO_SECRET'],
+                                    secure=True if environ['MINIO_SCHEME']=='https' else False)    
+    '''
     minio_client.set_app_info(name, version)
 
     monitor_url = environ["MONITOR_URL"]
@@ -1322,7 +1332,7 @@ def group_bind(function, name, version="1.0.0", pulserate=25):
         environ["MINIO_HOST"] + ":" + environ["MINIO_PORT"],
         access_key=environ["MINIO_ACCESS"],
         secret_key=environ["MINIO_SECRET"],
-        secure=True if environ["MINIO_SCHEME"] == "https" else False)
+        secure=True if environ["MINIO_SCHEME"] == "https" else False).WithSSL()
         
     minio_client.set_app_info(name, version)
 
