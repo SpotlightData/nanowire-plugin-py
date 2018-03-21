@@ -586,7 +586,7 @@ def send(name, payload, output, input_channel, output_channel, method, minio_cli
         set_status(monitor_url,
                    payload["nmo"]["job"]["job_id"],
                    payload["nmo"]["task"]["task_id"],
-                   name + ".consumed", error=err)
+                   name, error=err)
     except Exception as exp:
         logger.warning("failed to set status")
         logger.warning("exception: %s"%str(exp))
