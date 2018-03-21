@@ -29,6 +29,10 @@ from minio import Minio
 import datetime
 import shutil
 
+from gevent import monkey
+
+monkey.patch_all()
+
 #from minio.error import AccessDenied
 
 #import the relavant version of urllib depending on the version of python we are
@@ -554,7 +558,7 @@ def send(name, payload, output, input_channel, output_channel, method, minio_cli
     logger.info("channel %s"%input_channel)
     logger.info("method %s"%method)
     
-    next_plugin= inform_monitor(payload, name, monitor_url, minio_client)
+    next_plugin = inform_monitor(payload, name, monitor_url, minio_client)
 
 
     #python2 has a nasty habit of converting things to unicode so this forces that behaviour out
