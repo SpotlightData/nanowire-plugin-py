@@ -627,9 +627,10 @@ def get_url(payload, minio_cl):
         
         url = minio_cl.presigned_get_object(payload["nmo"]["job"]["job_id"], path)
     #if we cant get the url from the monitor then we set it as None
-    except Exception as exp:
+    except:
+        result = traceback.format_exc()
         
-        logger.warning("FALIED TO GET URL DUE TO: %s"%str(exp))
+        logger.warning("FALIED TO GET URL DUE TO: %s"%str(result))
         url = None
     
     return url
