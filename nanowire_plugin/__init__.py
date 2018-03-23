@@ -10,10 +10,6 @@ Created on Wed Oct 25 11:30:46 2017
 Provides a `bind` function to plugins so they can simply bind a function to a queue.
 """
 from minio import Minio
-from gevent import monkey
-
-monkey.patch_all()
-
 
 import os
 import tarfile
