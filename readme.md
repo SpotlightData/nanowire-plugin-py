@@ -13,7 +13,7 @@ Library is on PyPI: https://pypi.python.org/pypi/nanowire-plugin
 ```python
 from nanowire_plugin import bind
 
-def my_analysis(nmo: dict, jsonld: dict, url: str) -> dict:
+def my_analysis(nmo, jsonld, url):
     # perform analysis
 
     return result
