@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-from setuptools import setup
+from setuptools import setup, find_packages
 import os
 
 here = os.getcwd()
@@ -16,14 +16,19 @@ with open("./VERSION") as f:
 
 setup(
     name='nanowire_plugin',
+    description='Tool for creating python nanowire plugins',
     version=VERSION,
-    packages=['nanowire_plugin'],
+    packages=find_packages(),
+    keywords=['nanowire', 'spotlight data'],
     requires=['pika', 'minio'],
     url="https://github.com/SpotlightData/nanowire-plugin-py",
-    author='Barnaby "Southclaws" Keene',
-    author_email='southclaws@gmail.com',
+    author='Barnaby "Southclaws" Keene/Stuart Bowe',
+    author_email='stuart@spotlightdata.co.uk',
+    maintainer='Stuart Bowe',
+    maintainer_email='stuart@spotlightdata.co.uk',
     license='MIT',
     include_package_data=True,
+    install_requires=["minio", "pika"],
     data_files=[
         ('.', ['VERSION'])
     ]
