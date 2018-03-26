@@ -305,7 +305,12 @@ def bind(function, name, version="1.0.0", pulserate=25):
     requester = on_request_class(connection, function, name, minio_client, output_channel, monitor_url)
     
     #set the queue length to one
-    input_channel.basic_qos(prefetch_count=1)    
+    input_channel.basic_qos(prefetch_count=1)
+    
+    #find some things out about the way basic_consume has changed
+    print("---------------------------------")
+    print(inspect.getargspec(input_channel.basic_consume))
+    print(name)
     
     #set up the function for running the users code on the input message
     input_channel.basic_consume(requester.on_request, queue=name, no_ack=False)
