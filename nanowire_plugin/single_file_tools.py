@@ -209,7 +209,8 @@ def bind(function, name, version="1.0.0", pulserate=25):
     
     logger.info("initialising plugin: %s"%name)
 
-
+    #this is only commented out since I'm trying to find the source of these terrible errors
+    '''
     try:
         if environ["AMQP_SECURE"] == "1":
             logger.info("Using ssl connection")
@@ -244,17 +245,18 @@ def bind(function, name, version="1.0.0", pulserate=25):
                 blocked_connection_timeout=120)
                 
     except:
-        logger.info("Not using ssl")
-        #set the parameters for pika
-        parameters = pika.ConnectionParameters(
-            host=environ["AMQP_HOST"],
-            port=int(environ["AMQP_PORT"]),
-            credentials=pika.PlainCredentials(environ["AMQP_USER"], environ["AMQP_PASS"]),
-            heartbeat=pulserate,
-            socket_timeout=10,
-            connection_attempts=1,
-            retry_delay = 5,
-            blocked_connection_timeout=120)
+    '''
+    logger.info("Not using ssl")
+    #set the parameters for pika
+    parameters = pika.ConnectionParameters(
+        host=environ["AMQP_HOST"],
+        port=int(environ["AMQP_PORT"]),
+        credentials=pika.PlainCredentials(environ["AMQP_USER"], environ["AMQP_PASS"]),
+        heartbeat=pulserate,
+        socket_timeout=10,
+        connection_attempts=1,
+        retry_delay = 5,
+        blocked_connection_timeout=120)
 
     #set up pika connection channels between rabbitmq and python
     connection = pika.BlockingConnection(parameters)
