@@ -269,10 +269,10 @@ def send(name, payload, output, input_channel, output_channel, method, minio_cli
         
     if payload['nmo'] != output['nmo']:
         
-        logger.info("Input")
-        logger.info(json.dumps(payload))
-        logger.info("output")
-        logger.info(json.dumps(output))
+        #logger.info("Input")
+        #logger.info(json.dumps(payload))
+        #logger.info("output")
+        #logger.info(json.dumps(output))
         
         payload['nmo'] = output['nmo']
 

@@ -626,7 +626,7 @@ class group_on_request_class():
                 elif messages > 1:
                     raise Exception("Something has gone wrong, there are multiple messages on the queue: %s"%str(self.process_queue.queue))
         
-        logger.info(json.dumps(self.payload))
+        #logger.info(json.dumps(self.payload))
         
         #run the send command with a 2 minute timeout
         send(self.name, self.payload, output, ch, self.output_channel, method, self.minio_client, self.monitor_url)
