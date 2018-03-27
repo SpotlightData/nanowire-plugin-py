@@ -19,7 +19,7 @@ import inspect
 
 import ssl
 
-import threading
+#import threading
 from multiprocessing import  Process, Queue
 
 
@@ -32,15 +32,6 @@ from nanowire_plugin import send, set_status, validate_payload, get_url
 
 #from minio.error import AccessDenied
 
-#import the relavant version of urllib depending on the version of python we are
-if sys.version_info.major == 3:
-    import urllib
-elif sys.version_info.major == 2:
-    import urllib
-    import urllib2
-
-else:
-    import urllib
 
 #set up the logger globally
 logger = logging.getLogger("nanowire-plugin")
@@ -165,10 +156,7 @@ class on_request_class():
                         logger.warning("=========================")
                         logger.warning(traceback.format_exc())
                         #'Result did not get put onto the processing queue'
-                        
-    
                     
-                
                 elif messages > 1:
                     raise Exception("Something has gone wrong, there are multiple messages on the queue: %s"%str(self.process_queue.queue))
             

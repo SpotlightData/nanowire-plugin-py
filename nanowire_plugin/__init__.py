@@ -25,11 +25,9 @@ import pika
 #import the relavant version of urllib depending on the version of python we are
 if sys.version_info.major == 3:
     import urllib
-    from queue import Queue
 elif sys.version_info.major == 2:
     import urllib
     import urllib2
-    from Queue import Queue
 else:
     import urllib
 

@@ -26,7 +26,7 @@ import inspect
 #from ssl import PROTOCOL_TLSv1_2
 import ssl
 
-import threading
+from multiprocessing import  Process, Queue
 
 import time
 import sys
@@ -37,15 +37,7 @@ import shutil
 from nanowire_plugin import send, set_status, validate_payload
 
 #import the relavant version of urllib depending on the version of python we are
-if sys.version_info.major == 3:
-    import urllib
-    from queue import Queue
-elif sys.version_info.major == 2:
-    import urllib
-    import urllib2
-    from Queue import Queue
-else:
-    import urllib
+import urllib
 
 #set up the logger globally
 logger = logging.getLogger("nanowire-plugin")
@@ -587,9 +579,13 @@ class group_on_request_class():
             
 
         #handle the function call here!!!
-        proc_thread = threading.Thread(target=self.run_processing_thread)
-        proc_thread.setDaemon(True)
-        proc_thread.start()
+        #proc_thread = threading.Thread(target=self.run_processing_thread)
+        #proc_thread.setDaemon(True)
+        #proc_thread.start()
+        
+        p = Process(target=self.run_processing_thread, args=())
+        p.start()        
+        
         
         processing = True
         
@@ -606,23 +602,27 @@ class group_on_request_class():
             if time_since_last_heartbeat >= pacemaker_pluserate:
                 self.connection.process_data_events()
                 
-                #reset the heartbeat counter
+                #reset the timer on the pacemaker
                 beat_time = time.time()
                 time_since_last_heartbeat = 0
             
             messages = self.process_queue.qsize()
             
-            if messages == 1:
-                try:
-                    output = self.process_queue.get_nowait()
-                except:
-                    output = 'Result did not get put onto the processing queue'
-
-                processing = False
+            if not self.process_queue.empty():
             
-            elif messages > 1:
-                raise Exception("Something has gone wrong, there are multiple messages on the queue: %s"%str(self.process_queue.queue))
-        
+                if messages == 1:
+                    try:
+                        output = self.process_queue.get_nowait()
+                        processing = False
+                    except:
+                        logger.warning(self.process_queue.qsize())
+                        logger.warning("=========================")
+                        logger.warning(traceback.format_exc())
+                        #'Result did not get put onto the processing queue'
+                    
+                elif messages > 1:
+                    raise Exception("Something has gone wrong, there are multiple messages on the queue: %s"%str(self.process_queue.queue))
+            
         
         #run the send command with a 2 minute timeout
         send(self.name, self.payload, output, ch, self.output_channel, method, self.minio_client, self.monitor_url)
@@ -694,6 +694,7 @@ class group_on_request_class():
         #logger.info("************************************")
         
         #put our result onto the queue so that it can be sent through the system
+        logger.info("Putting result on thread")
         self.process_queue.put_nowait(result)
         
         
