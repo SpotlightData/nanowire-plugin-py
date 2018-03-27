@@ -177,10 +177,11 @@ class writer():
     def append_task(self, single_file):
         
         if sys.version_info.major >= 3:
-            if 'nanowire_plugin.single_file' not in str(type(single_file)):
+            if 'nanowire_plugin.group_tools.single_file' not in str(type(single_file)):
                 raise Exception("You can only write a nanowire plugin single_file object to the output using the append task command. You have tried to send an invalid %s object"%str(type(single_file)))
         else:
-            if 'nanowire_plugin.single_file' not in str(single_file):
+            #logger.info(str(single_file))
+            if 'nanowire_plugin.group_tools.single_file' not in str(single_file):
                 raise Exception("You can only write a nanowire plugin single_file object to the output using the append task command. You have tried to send an invalid %s object"%str(type(single_file)))
  
         #we only save a single file result if there have been changes
@@ -286,6 +287,7 @@ class Minio_tool():
             
         if not p1:
             raise Exception("Misc field missing from nmo. nmo is: %s"%json.dumps(nmo))
+        
         
         try:
             nmo['source']['misc']['storePayloads'].append(save_name)
@@ -623,7 +625,8 @@ class group_on_request_class():
                     
                 elif messages > 1:
                     raise Exception("Something has gone wrong, there are multiple messages on the queue: %s"%str(self.process_queue.queue))
-            
+        
+        logger.info(json.dumps(self.payload))
         
         #run the send command with a 2 minute timeout
         send(self.name, self.payload, output, ch, self.output_channel, method, self.minio_client, self.monitor_url)
@@ -695,7 +698,7 @@ class group_on_request_class():
         #logger.info("************************************")
         
         #put our result onto the queue so that it can be sent through the system
-        logger.info("Putting result on thread")
+        logger.info("Putting result on thread %s"%json.dumps(result))
         self.process_queue.put_nowait(result)
         
         

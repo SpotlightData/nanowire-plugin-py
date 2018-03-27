@@ -266,6 +266,15 @@ def send(name, payload, output, input_channel, output_channel, method, minio_cli
 
     if out_jsonld != None:
         payload["jsonld"] = out_jsonld
+        
+    if payload['nmo'] != output['nmo']:
+        
+        logger.info("Input")
+        logger.info(json.dumps(payload))
+        logger.info("output")
+        logger.info(json.dumps(output))
+        
+        payload['nmo'] = output['nmo']
 
     logger.info("finished running user code on %s"%payload["nmo"]["source"]["name"])
     
