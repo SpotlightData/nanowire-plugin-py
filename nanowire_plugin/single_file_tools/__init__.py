@@ -20,6 +20,8 @@ import inspect
 import ssl
 
 import threading
+from multiprocessing import  Process, Queue
+
 
 import time
 import sys
@@ -33,11 +35,10 @@ from nanowire_plugin import send, set_status, validate_payload, get_url
 #import the relavant version of urllib depending on the version of python we are
 if sys.version_info.major == 3:
     import urllib
-    from queue import Queue
 elif sys.version_info.major == 2:
     import urllib
     import urllib2
-    from Queue import Queue
+
 else:
     import urllib
 
@@ -124,9 +125,13 @@ class on_request_class():
             
 
         #handle the function call here!!!
-        proc_thread = threading.Thread(target=self.run_processing_thread)
-        proc_thread.setDaemon(True)
-        proc_thread.start()
+        #proc_thread = threading.Thread(target=self.run_processing_thread)
+        #proc_thread.setDaemon(True)
+        #proc_thread.start()
+
+        #handle the function call on a second thread
+        p = Process(target=self.run_processing_thread, args=())
+        p.start()
         
         processing = True
         
@@ -149,17 +154,24 @@ class on_request_class():
             
             messages = self.process_queue.qsize()
             
-            if messages == 1:
-                try:
-                    output = self.process_queue.get_nowait()
-                except:
-                    output = 'Result did not get put onto the processing queue'
-
-                processing = False
+            if not self.process_queue.empty():
             
-            elif messages > 1:
-                raise Exception("Something has gone wrong, there are multiple messages on the queue: %s"%str(self.process_queue.queue))
-        
+                if messages == 1:
+                    try:
+                        output = self.process_queue.get_nowait()
+                        processing = False
+                    except:
+                        logger.warning(self.process_queue.qsize())
+                        logger.warning("=========================")
+                        logger.warning(traceback.format_exc())
+                        #'Result did not get put onto the processing queue'
+                        
+    
+                    
+                
+                elif messages > 1:
+                    raise Exception("Something has gone wrong, there are multiple messages on the queue: %s"%str(self.process_queue.queue))
+            
         
         #run the send command with a 2 minute timeout
         send(self.name, self.payload, output, ch, self.output_channel, method, self.minio_client, self.monitor_url)
@@ -186,6 +198,7 @@ class on_request_class():
         except:
             result = traceback.format_exc()
         
+        logger.info("PUTTING DATA ON QUEUE")
         self.process_queue.put_nowait(result)
         
         
@@ -210,7 +223,7 @@ def bind(function, name, version="1.0.0", pulserate=25):
     logger.info("initialising plugin: %s"%name)
 
     #this is only commented out since I'm trying to find the source of these terrible errors
-    '''
+    
     try:
         if environ["AMQP_SECURE"] == "1":
             logger.info("Using ssl connection")
@@ -245,14 +258,18 @@ def bind(function, name, version="1.0.0", pulserate=25):
                 blocked_connection_timeout=120)
                 
     except:
-    '''
-    logger.info("Not using ssl, using nanowire plugin version 0.10.46")
-    #set the parameters for pika
-    parameters = pika.ConnectionParameters(
-        host=environ["AMQP_HOST"],
-        port=int(environ["AMQP_PORT"]),
-        credentials=pika.PlainCredentials(environ["AMQP_USER"], environ["AMQP_PASS"]),
-        heartbeat=pulserate)
+    
+        logger.info("Not using ssl")
+        #set the parameters for pika
+        parameters = pika.ConnectionParameters(
+            host=environ["AMQP_HOST"],
+            port=int(environ["AMQP_PORT"]),
+            credentials=pika.PlainCredentials(environ["AMQP_USER"], environ["AMQP_PASS"]),
+            heartbeat=pulserate,
+            socket_timeout=10,
+            connection_attempts=1,
+            retry_delay = 5,
+            blocked_connection_timeout=120)
 
     #set up pika connection channels between rabbitmq and python
     connection = pika.BlockingConnection(parameters)
@@ -308,12 +325,12 @@ def bind(function, name, version="1.0.0", pulserate=25):
     input_channel.basic_qos(prefetch_count=1)
     
     #find some things out about the way basic_consume has changed
-    print("---------------------------------")
-    print(inspect.getargspec(input_channel.basic_consume))
-    print(name)
+    #print("---------------------------------")
+    #print(inspect.getargspec(input_channel.basic_consume))
+    #print(name)
     
     #set up the function for running the users code on the input message
-    input_channel.basic_consume(requester.on_request, queue=name, no_ack=False)
+    input_channel.basic_consume(name, requester.on_request, auto_ack=False)
     
     
     #thread = threading.Thread(target=requester.countdown_timer.begin_countdown)

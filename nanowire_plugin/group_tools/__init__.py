@@ -412,6 +412,7 @@ def group_bind(function, name, version="1.0.0", pulserate=25):
 
     try:
         if environ["AMQP_SECURE"] == "1":
+            logger.info("Using ssl connection")
             
             if str(pika.__version__).split(".")[0] != '1':
                 raise Exception("Pika version %s does not support ssl connections, you must use version 1.0.0 or above"%pika.__version__)
@@ -430,7 +431,7 @@ def group_bind(function, name, version="1.0.0", pulserate=25):
                 ssl = pika.SSLOptions(context))
             
         else:
-            
+            logger.info("Not using ssl")
             #set the parameters for pika
             parameters = pika.ConnectionParameters(
                 host=environ["AMQP_HOST"],
@@ -443,6 +444,8 @@ def group_bind(function, name, version="1.0.0", pulserate=25):
                 blocked_connection_timeout=120)
                 
     except:
+    
+        logger.info("Not using ssl")
         #set the parameters for pika
         parameters = pika.ConnectionParameters(
             host=environ["AMQP_HOST"],
@@ -496,10 +499,10 @@ def group_bind(function, name, version="1.0.0", pulserate=25):
     group_requester = group_on_request_class(connection, function, name, minio_client, output_channel, monitor_url)
     
     #set the queue length to one
-    input_channel.basic_qos(prefetch_count=1)    
+    input_channel.basic_qos(prefetch_count=1)
     
     #set up the function for running the users code on the input message
-    input_channel.basic_consume(group_requester.on_request, queue=name, no_ack=False)
+    input_channel.basic_consume(name, group_requester.on_request, auto_ack=False)
     
     #print("Created basic consumer")
     logger.info("Created basic consumer")
