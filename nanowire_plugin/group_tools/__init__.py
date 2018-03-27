@@ -156,6 +156,7 @@ class writer():
             group_store_dict['doc']['meta'] = {}
             group_store_dict['doc']['meta']['userId'] = self.nmo['job']['user_id']
             group_store_dict['doc']['meta']['projectId'] = self.nmo['job']['project_id']
+            group_store_dict['doc']['meta']['jobId'] = self.nmo['job']['job_id']
             group_store_dict['doc']['meta']['taskId'] = self.nmo['task']['task_id']
             group_store_dict['doc']['meta']['storedAt'] = datetime.datetime.utcnow().isoformat()
             group_store_dict['doc']['jsonLD'] = group_jsonld
