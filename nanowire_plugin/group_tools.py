@@ -570,10 +570,7 @@ class group_on_request_class():
             try:
                 self.payload = json.loads(data)
             except:
-                if sys.version_info.major == 2:
-                    set_status(self.monitor_url, u"Unknown", u"Unknown", self.name, error="Message passed to %s is incomplete")
-                else:
-                    set_status(self.monitor_url, "Unknown", "Unknown", self.name, error="Message passed to %s is incomplete")
+                set_status(self.monitor_url, "Unknown", "Unknown", self.name, error="Message passed to %s is incomplete")
                 #remove the bad file from the queue
                 ch.basic_ack(method.delivery_tag)
                 logger.error("The end of the file may have been cut off by rabbitMQ, last 10 characters are: %s"%data[0:10])
@@ -701,7 +698,7 @@ class group_on_request_class():
         #logger.info("************************************")
         
         #put our result onto the queue so that it can be sent through the system
-        #logger.info("Putting result on thread %s"%json.dumps(result))
+        logger.info("Putting result on thread %s"%json.dumps(result))
         self.process_queue.put_nowait(result)
         
         

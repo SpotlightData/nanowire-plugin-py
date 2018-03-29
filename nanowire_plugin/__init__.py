@@ -148,44 +148,45 @@ def set_status(monitor_url, job_id, task_id, name, error=0):
             "t": int(time.time() * 1000 * 1000),
             "p": name,
             "jobId": job_id})
-    
-    #if we're working with python3
-    if sys.version_info.major == 3:
-        
-        logger.info("Running in python 3")
-        
-        request_url = urllib.parse.urljoin(monitor_url,"/v4/tasks/%s/positions"%task_id)
-        
-        req = urllib.request.Request(request_url,
-            payload.encode(),
-            headers={
-                "Content-Type": "application/json"
-            })
+    try:
+        #if we're working with python3
+        if sys.version_info.major == 3:
             
-        urllib.request.urlopen(req)
-
-    
-    #if we're working with python2
-    elif sys.version_info.major == 2:
-        
-        logger.info("Running in python 2")
-        
-        #there's no urljoin command in python2
-        request_url = monitor_url + "/v4/tasks/%s/positions"%task_id       
-        
-        req = urllib2.Request(request_url,
-            payload.encode(),
-            headers={
-                "Content-Type": "application/json"
-            })
+            logger.info("Running in python 3")
             
-        urllib2.urlopen(req)
+            request_url = urllib.parse.urljoin(monitor_url,"/v4/tasks/%s/positions"%task_id)
+            
+            req = urllib.request.Request(request_url,
+                payload.encode(),
+                headers={
+                    "Content-Type": "application/json"
+                })
+                
+            urllib.request.urlopen(req)
     
-    #if we're not in python2 or python3
-    else:
         
-        logger.warning("Running in an unknown version of python:- %s"%str(sys.version_info))
-
+        #if we're working with python2
+        elif sys.version_info.major == 2:
+            
+            logger.info("Running in python 2")
+            
+            #there's no urljoin command in python2
+            request_url = monitor_url + "/v4/tasks/%s/positions"%task_id       
+            
+            req = urllib2.Request(request_url,
+                payload.encode(),
+                headers={
+                    "Content-Type": "application/json"
+                })
+                
+            urllib2.urlopen(req)
+        
+        #if we're not in python2 or python3
+        else:
+            
+            logger.warning("Running in an unknown version of python:- %s"%str(sys.version_info))
+    except:
+        logger.warning("COULD NOT CONNECT TO MONITOR")
 
 
 def send(name, payload, output, input_channel, output_channel, method, minio_client, monitor_url):
@@ -212,14 +213,6 @@ def send(name, payload, output, input_channel, output_channel, method, minio_cli
     if not output_channel.is_open:
         raise Exception("Output channel is closed")
         
-        
-    if sys.version_info.major == 3:
-        if str(type(method)) != "<class 'pika.spec.Basic.Deliver'>" and "mock" not in str(type(method)):
-            raise Exception("Method needs to be a pika method, it is actually: %s"%str(type(method)))
-            
-    elif sys.version_info.major == 2:
-        if str(type(method)) != "<class 'pika.spec.Deliver'>" and "mock" not in str(type(method)):
-            raise Exception("Method needs to be a pika method, it is actually: %s"%str(type(method)))
 
     #check the payload
     validate_payload(payload)
@@ -266,15 +259,13 @@ def send(name, payload, output, input_channel, output_channel, method, minio_cli
 
     if out_jsonld != None:
         payload["jsonld"] = out_jsonld
+    
+    if isinstance(output, dict):
+        if 'nmo' in output.keys():    
         
-    if payload['nmo'] != output['nmo']:
-        
-        #logger.info("Input")
-        #logger.info(json.dumps(payload))
-        #logger.info("output")
-        #logger.info(json.dumps(output))
-        
-        payload['nmo'] = output['nmo']
+            if payload['nmo'] != output['nmo']:
+                
+                payload['nmo'] = output['nmo']
 
     logger.info("finished running user code on %s"%payload["nmo"]["source"]["name"])
     
