@@ -41,7 +41,7 @@ logger = logging.getLogger("nanowire-plugin")
 #create a class so we can feed things into the on_request function
 class on_request_class():
     
-    def __init__(self, connection, function, name, minio_client, output_channel, monitor_url):
+    def __init__(self, connection, function, name, minio_client, output_channel, monitor_url, debug_mode, set_timeout):
         
         #check to see if the input function has the correct number of arguments. This changes depending on whether we're working
         #in python2 or python3 because apparantly unit testing is super important and my time isn't
@@ -71,12 +71,14 @@ class on_request_class():
             
         #check the input queue is a pika queue, or a mock of one
         self.name = name
+        self.timeout = set_timeout
         self.connection = connection
         self.function = function
         self.minio_client = minio_client
         self.monitor_url = monitor_url
         self.output_channel = output_channel
         self.process_queue = Queue()
+        self.debug_mode = debug_mode
 
     def on_request(self, ch, method, props, body):
         
@@ -134,6 +136,8 @@ class on_request_class():
         #set up t=0 for the heartbeats
         beat_time = time.time()
         
+        start_time = time.time()
+        
         #wait here for the process to finish
         while processing:
             
@@ -145,6 +149,13 @@ class on_request_class():
                 #reset the timer on the pacemaker
                 beat_time = time.time()
                 time_since_last_heartbeat = 0
+            
+            if self.set_timeout > 0:
+                time_taken = time.time() - start_time
+                if time_taken > self.set_timeout:
+                    #if we exceed the timeout we are going to want to kill the pod
+                    raise Exception("The plugin has timed out, consider increasing timeout or using smaller files")
+            
             
             messages = self.process_queue.qsize()
             
@@ -165,7 +176,7 @@ class on_request_class():
             
         
         #run the send command with a 2 minute timeout
-        send(self.name, self.payload, output, ch, self.output_channel, method, self.minio_client, self.monitor_url)
+        send(self.name, self.payload, output, ch, self.output_channel, method, self.minio_client, self.monitor_url, self.debug_mode)
         #returned = send(self.name, payload, ch, self.output_channel, method, props, self.minio_client, self.monitor_url, self.function)
         
 
@@ -186,8 +197,14 @@ class on_request_class():
         try:
             #result = self.function(nmo, jsonld, url)
             result = run_function(self.function, nmo, jsonld, url)
-        except:
-            result = traceback.format_exc()
+            
+        except Exception as exp:
+            if self.debug_mode > 0:
+                result = traceback.format_exc()
+                logger.info("THERE WAS A PROBLEM RUNNING THE MAIN FUNCTION: %s"%str(result))
+            else:
+                result = exp
+                logger.info("THERE WAS A PROBLEM RUNNING THE MAIN FUNCTION: %s"%str(result))
         
         logger.info("PUTTING DATA ON QUEUE")
         self.process_queue.put_nowait(result)
@@ -196,7 +213,7 @@ class on_request_class():
         
         
 
-def bind(function, name, version="1.0.0", pulserate=25):
+def bind(function, name, version="1.0.0", pulserate=25, debug_mode=0, set_timeout=0):
     """binds a function to the input message queue"""
     
     if not isinstance(name, str):
@@ -205,11 +222,13 @@ def bind(function, name, version="1.0.0", pulserate=25):
     #set up the logging
     logger.setLevel(logging.DEBUG)
     
-    logger.info("Running with pika version %s"%str(pika.__version__))
-
-    #write to screen to ensure logging is working ok
-    #print "Initialising nanowire lib, this is a print"
-    logger.info("Running on %s"%sys.platform)
+    if debug_mode > 0:
+        
+        logger.info("Running with pika version %s"%str(pika.__version__))
+    
+        #write to screen to ensure logging is working ok
+        #print "Initialising nanowire lib, this is a print"
+        logger.info("Running on %s"%sys.platform)
     
     logger.info("initialising plugin: %s"%name)
 
@@ -310,7 +329,7 @@ def bind(function, name, version="1.0.0", pulserate=25):
     
     #all the stuff that needs to be passed into the callback function is stored
     #in this object so that it can be easily passed through
-    requester = on_request_class(connection, function, name, minio_client, output_channel, monitor_url)
+    requester = on_request_class(connection, function, name, minio_client, output_channel, monitor_url, debug_mode, set_timeout)
     
     #set the queue length to one
     input_channel.basic_qos(prefetch_count=1)
@@ -327,10 +346,10 @@ def bind(function, name, version="1.0.0", pulserate=25):
     #thread = threading.Thread(target=requester.countdown_timer.begin_countdown)
     #thread.setDaemon(True)
     #thread.start()
-    
-    #print("Created basic consumer")
-    logger.info("Created basic consumer")
-    #print("ENTERING THE FUNCTION")
+    if debug_mode > 0:
+        #print("Created basic consumer")
+        logger.info("Created basic consumer")
+        #print("ENTERING THE FUNCTION")
 
         
     input_channel.start_consuming()

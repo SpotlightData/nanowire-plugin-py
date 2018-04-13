@@ -383,7 +383,7 @@ def run_group_function(function , read_tool, write_tool, nmo):
 
 
 
-def group_bind(function, name, version="1.0.0", pulserate=25):
+def group_bind(function, name, version="1.0.0", pulserate=25, debug_mode=0):
     """binds a function to the input message queue"""
     
     #time.sleep(120)
@@ -491,7 +491,7 @@ def group_bind(function, name, version="1.0.0", pulserate=25):
     
     #all the stuff that needs to be passed into the callback function is stored
     #in this object so that it can be easily passed through
-    group_requester = group_on_request_class(connection, function, name, minio_client, output_channel, monitor_url)
+    group_requester = group_on_request_class(connection, function, name, minio_client, output_channel, monitor_url, debug_mode)
     
     #set the queue length to one
     input_channel.basic_qos(prefetch_count=1)
@@ -514,7 +514,7 @@ def group_bind(function, name, version="1.0.0", pulserate=25):
 #create a class so we can feed things into the on_request function
 class group_on_request_class():
     
-    def __init__(self, connection, function, name, minio_client, output_channel, monitor_url):
+    def __init__(self, connection, function, name, minio_client, output_channel, monitor_url, debug_setting):
         
         #check to see if the input function has the correct number of arguments. This changes depending on whether we're working
         #in python2 or python3 because apparantly unit testing is super important and my time isn't
@@ -542,6 +542,7 @@ class group_on_request_class():
         self.minio_client = minio_client
         self.monitor_url = monitor_url
         self.output_channel = output_channel
+        self.debug_mode = debug_setting
 
         self.process_queue = Queue()
 
@@ -632,7 +633,7 @@ class group_on_request_class():
         #logger.info(json.dumps(self.payload))
         
         #run the send command with a 2 minute timeout
-        send(self.name, self.payload, output, ch, self.output_channel, method, self.minio_client, self.monitor_url)
+        send(self.name, self.payload, output, ch, self.output_channel, method, self.minio_client, self.monitor_url, self.debug_mode)
         #returned = send(self.name, payload, ch, self.output_channel, method, props, self.minio_client, self.monitor_url, self.function)
         
 
@@ -675,9 +676,12 @@ class group_on_request_class():
                 
                 
                 
-            except:
-                result = traceback.format_exc()
-                logger.info("THERE WAS A PROBLEM RUNNING THE MAIN FUNCTION: %s"%str(result))
+            except Exception as exp:
+                if self.debug_mode > 0:
+                    result = traceback.format_exc()
+                    logger.info("THERE WAS A PROBLEM RUNNING THE MAIN FUNCTION: %s"%str(result))
+                else:
+                    result = exp
                 
         else:
             result = "GROUP TARBALL IS MISSING"

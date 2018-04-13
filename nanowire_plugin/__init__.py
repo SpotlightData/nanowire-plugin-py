@@ -189,7 +189,7 @@ def set_status(monitor_url, job_id, task_id, name, error=0):
         logger.warning("COULD NOT CONNECT TO MONITOR")
 
 
-def send(name, payload, output, input_channel, output_channel, method, minio_client, monitor_url):
+def send(name, payload, output, input_channel, output_channel, method, minio_client, monitor_url, debug_mode):
     """unwraps a message and calls the user function"""   
     
     #check the plugin name
@@ -236,7 +236,7 @@ def send(name, payload, output, input_channel, output_channel, method, minio_cli
         err = 0
     elif output == None:
         err = "NO OUTPUT WAS RETURNED"
-
+    
        
     try:
         set_status(monitor_url,
@@ -256,9 +256,19 @@ def send(name, payload, output, input_channel, output_channel, method, minio_cli
     # in EXACTLY the right format
     
     out_jsonld = clean_function_output(output, payload)
+       
+    try:
+        group = payload['nmo']['source']['misc']['isGroup']
+    except:
+        group = False
+        
+    if not group:
 
-    if out_jsonld != None:
-        payload["jsonld"] = out_jsonld
+        if out_jsonld != None:
+            try:
+                payload["jsonld"] = out_jsonld
+            except:
+                logger.warning("could not set payload")
     
     if isinstance(output, dict):
         if 'nmo' in output.keys():    
@@ -268,6 +278,10 @@ def send(name, payload, output, input_channel, output_channel, method, minio_cli
                 payload['nmo'] = output['nmo']
 
     logger.info("finished running user code on %s"%payload["nmo"]["source"]["name"])
+    
+    if debug_mode > 0:
+        logger.warning("SENDING:-")
+        logger.warning(json.dumps(payload))
     
     #send the info from this plugin to the next one in the pipeline
     send_to_next_plugin(next_plugin, payload, output_channel)
@@ -421,7 +435,17 @@ def clean_function_output(result, payload):
     if payload == None:
         
         raise Exception("An empty payload has been receved")
-        
+    
+    #if the system cannot grab the group tarball I need to report an error to the user
+    #indicating that things have gone wrong somewhere
+    if result == "GROUP TARBALL IS MISSING":
+        return None
+    
+    try:
+        group = payload['nmo']['source']['misc']['isGroup']
+    except:
+        group = False    
+    
     #if the plugin has not produced a dictionary then we look to replace it with
     #something more sensible
     if not isinstance(result, dict):
@@ -430,7 +454,7 @@ def clean_function_output(result, payload):
         if not isinstance(payload, dict):
             logger.error("Payload is not a dictionary, it is %s, a %s"%(str(payload), type(payload)))
             
-            if "jsonld" in payload:
+            if "jsonld" in payload and not group:
                 
                 if isinstance(payload["jsonld"], dict):
                     result = payload["jsonld"]
@@ -452,7 +476,7 @@ def clean_function_output(result, payload):
         #if the result has jsonld as its top level then make it not so i.e
         #result = {"jsonld": {blah blah blah in jsonld format}} becomes=>
         #result = {blah blah blah in jsonld format}
-        if "jsonld" in result:
+        if "jsonld" in result.keys():
             result = result["jsonld"]
         else:
             result = result
