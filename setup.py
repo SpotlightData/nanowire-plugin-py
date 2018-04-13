@@ -27,6 +27,7 @@ setup(
     maintainer='Stuart Bowe',
     maintainer_email='stuart@spotlightdata.co.uk',
     license='MIT',
+    description='This library is designed for developers using the nanowire platform to produce plugins using python. There are two main functions they should be aware of. The first is bind which is used to create single file plugins and the second is group_bind which is used to create group plugins. You should see the nanowire documentation for advice on the use of these functions and instructions for building your own plugins',
     include_package_data=True,
     install_requires=["minio", "pika"],
     data_files=[
