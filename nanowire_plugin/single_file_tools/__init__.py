@@ -160,6 +160,8 @@ class on_request_class():
             messages = self.process_queue.qsize()
             
             if not self.process_queue.empty():
+                if self.debug_mode >= 2:
+                    logger.info("DATA FOUND ON QUEUE")
             
                 if messages == 1:
                     try:
@@ -206,7 +208,8 @@ class on_request_class():
                 result = exp
                 logger.info("THERE WAS A PROBLEM RUNNING THE MAIN FUNCTION: %s"%str(result))
         
-        logger.info("PUTTING DATA ON QUEUE")
+        if self.debug_mode >= 2:
+            logger.info("PUTTING DATA ON QUEUE")
         self.process_queue.put_nowait(result)
         
         
