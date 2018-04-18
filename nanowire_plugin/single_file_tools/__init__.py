@@ -26,6 +26,7 @@ from multiprocessing import  Process, Queue
 import time
 import sys
 import pika
+import hashlib
 import datetime
 
 from nanowire_plugin import send, set_status, validate_payload, get_url

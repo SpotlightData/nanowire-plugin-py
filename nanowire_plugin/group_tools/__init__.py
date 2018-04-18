@@ -33,6 +33,7 @@ import sys
 import pika
 import datetime
 import shutil
+import hashlib
 
 from nanowire_plugin import send, set_status, validate_payload
 
