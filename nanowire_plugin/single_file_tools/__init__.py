@@ -190,10 +190,12 @@ class on_request_class():
             
                 if messages == 1:
                     try:
+                        logger.info("TAKING DATA FROM QUEUE")
                         output = self.process_queue.get()
-                        
                         #put the sha-1 hash on the confirm queue
+                        logger.info("GENERATING CONFIRM MESSAGE")
                         confirm = hash_func(str(output))
+                        logger.info("SENDING CONFIRM MESSAGE")
                         self.confirm_queue.put_nowait(confirm)
                         processing = False
                     except:
@@ -203,7 +205,7 @@ class on_request_class():
                         #'Result did not get put onto the processing queue'
                     
                 elif messages > 1:
-                    raise Exception("Something has gone wrong, there are multiple messages on the queue: %s"%str(self.process_queue.queue))      
+                    raise Exception("Something has gone wrong, there are %s multiple messages on the processing queue"%str(self.process_queue.qsize()))      
         
         #run the send command with a 2 minute timeout
         send(self.name, self.payload, output, ch, self.output_channel, method, self.minio_client, self.monitor_url, self.debug_mode)
@@ -256,13 +258,18 @@ class on_request_class():
                     #if the message is confirmed we need to clear all queues because everyting is happening as expected
                     if self.debug_mode > 2:
                         logger.info("DATA TRANSFER CONFIRMED")
+                        
+                        
                     clear_queue(self.confirm_queue)
-                    clear_queue(self.process_queue.clear)
+                    clear_queue(self.process_queue)
                     unreceved = False
                     
                 else:
                     #if the message does not match the message we sent we resend and try again
                     logger.warning("MESSAGE WAS CHANGED WHEN PASSING BETWEEN THREADS")
+                    logger.warning(str(conf))
+                    logger.warning(str(conf_msg))
+                    
                     clear_queue(self.confirm_queue)
                     clear_queue(self.process_queue)
                     self.process_queue.put_nowait(result)
