@@ -275,6 +275,7 @@ class on_request_class():
                 clear_queue(self.confirm_queue)
                 clear_queue(self.process_queue)
                 self.process_queue.put(result)
+                handshake_t0 = time.time()
                 
         if self.debug_mode > 0:
             logger.info("FINISHED PROCESSING THREAD")
