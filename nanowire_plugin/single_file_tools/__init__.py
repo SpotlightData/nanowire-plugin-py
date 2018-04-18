@@ -51,6 +51,15 @@ def hash_func(text):
     #lt.log_debug(logger, 'TEXT ENCODED', input_dict={"text":text, "hash":hs})  
     
     return hs
+    
+    
+def clear_queue(q):
+    
+    try:
+        while True:
+            q.get_nowait()
+    except Empty:
+        pass
 
 
 #create a class so we can feed things into the on_request function
@@ -247,15 +256,15 @@ class on_request_class():
                     #if the message is confirmed we need to clear all queues because everyting is happening as expected
                     if self.debug_mode > 2:
                         logger.info("DATA TRANSFER CONFIRMED")
-                    self.confirm_queue.clear()
-                    self.process_queue.clear()
+                    clear_queue(self.confirm_queue)
+                    clear_queue(self.process_queue.clear)
                     unreceved = False
                     
                 else:
                     #if the message does not match the message we sent we resend and try again
                     logger.warning("MESSAGE WAS CHANGED WHEN PASSING BETWEEN THREADS")
-                    self.confirm_queue.clear()
-                    self.process_queue.clear()
+                    clear_queue(self.confirm_queue)
+                    clear_queue(self.process_queue)
                     self.process_queue.put_nowait(result)
                     
                     
@@ -263,8 +272,8 @@ class on_request_class():
             
             if time.time() - handshake_t0 >= missing_message_time:
                 logger.warning("MESSAGE DISAPPEARD FROM THE QUEUE WITHOUT CONFIRMING")
-                self.confirm_queue.clear()
-                self.process_queue.clear()
+                clear_queue(self.confirm_queue)
+                clear_queue(self.process_queue)
                 self.process_queue.put(result)
                 
         if self.debug_mode > 0:
