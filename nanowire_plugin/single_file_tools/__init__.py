@@ -58,7 +58,7 @@ def clear_queue(q):
     try:
         while True:
             q.get_nowait()
-    except Empty:
+    except:
         pass
 
 
