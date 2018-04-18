@@ -279,7 +279,7 @@ def send(name, payload, output, input_channel, output_channel, method, minio_cli
 
     logger.info("finished running user code on %s"%payload["nmo"]["source"]["name"])
     
-    if debug_mode > 0:
+    if debug_mode > 1:
         logger.warning("SENDING:-")
         logger.warning(json.dumps(payload))
     

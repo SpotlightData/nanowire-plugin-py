@@ -38,6 +38,20 @@ logger = logging.getLogger("nanowire-plugin")
 
 
 
+#The function that does the hashing
+def hash_func(text):
+    
+    if not isinstance(text, str):
+        raise Exception("The input to the hashing function should be a string, it is actually: %s, a %s"%(text, type(text)))
+    
+    hs = hashlib.sha1(text.encode('utf-8'))
+    hs = hs.hexdigest()
+    
+    #lt.log_debug(logger, 'TEXT ENCODED', input_dict={"text":text, "hash":hs})  
+    
+    return hs
+
+
 #create a class so we can feed things into the on_request function
 class on_request_class():
     
@@ -79,6 +93,7 @@ class on_request_class():
         self.output_channel = output_channel
         self.process_queue = Queue()
         self.debug_mode = debug_mode
+        self.confirm_queue = Queue()
 
     def on_request(self, ch, method, props, body):
         
@@ -150,9 +165,9 @@ class on_request_class():
                 beat_time = time.time()
                 time_since_last_heartbeat = 0
             
-            if self.set_timeout > 0:
+            if self.timeout > 0:
                 time_taken = time.time() - start_time
-                if time_taken > self.set_timeout:
+                if time_taken > self.timeout:
                     #if we exceed the timeout we are going to want to kill the pod
                     raise Exception("The plugin has timed out, consider increasing timeout or using smaller files")
             
@@ -160,12 +175,16 @@ class on_request_class():
             messages = self.process_queue.qsize()
             
             if not self.process_queue.empty():
-                if self.debug_mode >= 2:
+                if self.debug_mode >= 0:
                     logger.info("DATA FOUND ON QUEUE")
             
                 if messages == 1:
                     try:
-                        output = self.process_queue.get_nowait()
+                        output = self.process_queue.get()
+                        
+                        #put the sha-1 hash on the confirm queue
+                        confirm = hash_func(str(output))
+                        self.confirm_queue.put_nowait(confirm)
                         processing = False
                     except:
                         logger.warning(self.process_queue.qsize())
@@ -174,8 +193,7 @@ class on_request_class():
                         #'Result did not get put onto the processing queue'
                     
                 elif messages > 1:
-                    raise Exception("Something has gone wrong, there are multiple messages on the queue: %s"%str(self.process_queue.queue))
-            
+                    raise Exception("Something has gone wrong, there are multiple messages on the queue: %s"%str(self.process_queue.queue))      
         
         #run the send command with a 2 minute timeout
         send(self.name, self.payload, output, ch, self.output_channel, method, self.minio_client, self.monitor_url, self.debug_mode)
@@ -208,11 +226,49 @@ class on_request_class():
                 result = exp
                 logger.info("THERE WAS A PROBLEM RUNNING THE MAIN FUNCTION: %s"%str(result))
         
-        if self.debug_mode >= 2:
+        if self.debug_mode > 0:
             logger.info("PUTTING DATA ON QUEUE")
         self.process_queue.put_nowait(result)
         
-        
+                
+        missing_message_time = 5
+        #confirm that the data has been read
+        unreceved = True
+        conf_msg = hash_func(str(result))
+        handshake_t0 = time.time()
+        while unreceved:
+            
+            n_messages = self.confirm_queue.qsize()
+            
+            if n_messages == 1:
+                conf = self.confirm_queue.get_nowait()
+                if conf == conf_msg:
+                    #if the message is confirmed we need to clear all queues because everyting is happening as expected
+                    if self.debug_mode > 2:
+                        logger.info("DATA TRANSFER CONFIRMED")
+                    self.confirm_queue.clear()
+                    self.process_queue.clear()
+                    unreceved = False
+                    
+                else:
+                    #if the message does not match the message we sent we resend and try again
+                    logger.warning("MESSAGE WAS CHANGED WHEN PASSING BETWEEN THREADS")
+                    self.confirm_queue.clear()
+                    self.process_queue.clear()
+                    self.process_queue.put_nowait(result)
+                    
+                    
+            time.sleep(0.1)
+            
+            if time.time() - handshake_t0 >= missing_message_time:
+                logger.warning("MESSAGE DISAPPEARD FROM THE QUEUE WITHOUT CONFIRMING")
+                self.confirm_queue.clear()
+                self.process_queue.clear()
+                self.process_queue.put(result)
+                
+        if self.debug_mode > 0:
+            logger.info("FINISHED PROCESSING THREAD")
+            
         
         
 
