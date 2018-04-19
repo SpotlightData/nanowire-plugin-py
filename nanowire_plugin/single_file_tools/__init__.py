@@ -17,11 +17,18 @@ import inspect
 
 #from ssl import PROTOCOL_TLSv1_2
 
-import ssl
+try:
+    from Queue import Queue as qq
+except ImportError:
+    from queue import Queue as qq
 
+
+import ssl
+from threading import Thread
 #import threading
 from multiprocessing import  Process, Queue
 
+from kombu import Connection, Exchange, Queue
 
 import time
 import sys
@@ -34,8 +41,77 @@ from nanowire_plugin import send, set_status, validate_payload, get_url
 #from minio.error import AccessDenied
 
 
+###############################################################################
+### Here the tools that could be exported to single file plugin can be sent ###
+###############################################################################
+#!!!!!!!!!!!!!!!!!!!!!!!!
+
 #set up the logger globally
 logger = logging.getLogger("nanowire-plugin")
+
+
+class Worker(ConsumerMixin):
+    def __init__(self, connection, queues, function, name, minio_client, monitor_url, debug_mode):
+        
+        
+        self.name = name
+        self.function = function
+        self.minio_client = minio_client
+        self.monitor_url = monitor_url
+        self.debug_mode = debug_mode
+        
+        
+        self.connection = connection
+        self.queues = queues
+        self.q = qq()
+        self.workThread = Thread(target=self.run_tasks)
+        self.workThread.daemon = True
+        self.workThread.start()
+
+    def get_consumers(self, Consumer, channel):
+        return [Consumer(queues=self.queues,
+                         callbacks=[self.on_message],
+                         prefetch_count=1)]
+
+    def on_message(self, body, message):
+        print("new message to internal queue")
+        self.q.put((body, message))
+
+    def run_tasks(self):
+        while True:
+            try:
+                self.on_task(*self.q.get())
+            except Exception as ex:
+                logging.error(ex)
+
+            except KeyboardInterrupt:
+                break
+
+    def on_task(self, body, message):
+        print("run task")
+
+        nmo = self.payload['nmo']
+        jsonld = self.payload['jsonld']
+        #pull the url from minio
+        url = get_url(self.payload, self.minio_client)
+        #************** There needs to be some way of getting the url before we hit this
+        
+        try:
+            #result = self.function(nmo, jsonld, url)
+            result = run_function(self.function, nmo, jsonld, url)
+            
+        except Exception as exp:
+            if self.debug_mode > 0:
+                result = traceback.format_exc()
+                logger.info("THERE WAS A PROBLEM RUNNING THE MAIN FUNCTION: %s"%str(result))
+            else:
+                result = exp
+                logger.info("THERE WAS A PROBLEM RUNNING THE MAIN FUNCTION: %s"%str(result))
+        
+
+        message.ack()
+
+
 
 
 
@@ -45,6 +121,7 @@ def hash_func(text):
     if not isinstance(text, str):
         raise Exception("The input to the hashing function should be a string, it is actually: %s, a %s"%(text, type(text)))
     
+
     hs = hashlib.sha1(text.encode('utf-8'))
     hs = hs.hexdigest()
     
@@ -62,6 +139,8 @@ def clear_queue(q):
         pass
 
 
+#This huge block is all pika
+'''
 #create a class so we can feed things into the on_request function
 class on_request_class():
     
@@ -114,8 +193,7 @@ class on_request_class():
         #check the body is a byte string
         if not isinstance(body, bytes):
             raise Exception("The body data should be a byte stream, it is actually %s, %s"%(body, type(body)))
-
-        
+            
         #set up logging inside the server functions
         logger.setLevel(logging.DEBUG)
         
@@ -241,57 +319,10 @@ class on_request_class():
         if self.debug_mode > 0:
             logger.info("PUTTING DATA ON QUEUE")
         self.process_queue.put_nowait(result)
-        '''
-                
-        missing_message_time = 5
-        #confirm that the data has been read
-        unreceved = True
-        conf_msg = hash_func(str(result))
-        handshake_t0 = time.time()
-        while unreceved:
-            
-            n_messages = self.confirm_queue.qsize()
-            
-            if n_messages == 1:
-                conf = self.confirm_queue.get_nowait()
-                if conf == conf_msg:
-                    #if the message is confirmed we need to clear all queues because everyting is happening as expected
-                    if self.debug_mode > 1:
-                        logger.info("DATA TRANSFER CONFIRMED")
-                        
-                        
-                    clear_queue(self.confirm_queue)
-                    clear_queue(self.process_queue)
-                    unreceved = False
-                    
-                else:
-                    #if the message does not match the message we sent we resend and try again
-                    logger.warning("MESSAGE WAS CHANGED WHEN PASSING BETWEEN THREADS")
-                    logger.warning(str(conf))
-                    logger.warning(str(conf_msg))
-                    logger.warning(str(result))
-                    
-                    clear_queue(self.confirm_queue)
-                    clear_queue(self.process_queue)
-                    #self.process_queue.put_nowait(result)
-                    
-                    
-            time.sleep(0.1)
-            
-            if time.time() - handshake_t0 >= missing_message_time:
-                logger.warning("MESSAGE DISAPPEARD FROM THE QUEUE WITHOUT CONFIRMING")
-                logger.warning(self.confirm_queue.qsize())
-                logger.warning(self.process_queue.qsize())
-                clear_queue(self.confirm_queue)
-                clear_queue(self.process_queue)
-                logger.warning(self.confirm_queue.qsize())
-                logger.warning(self.process_queue.qsize())
-                self.process_queue.put(result)
-                handshake_t0 = time.time()
-        '''
+
         if self.debug_mode > 0:
             logger.info("FINISHED PROCESSING THREAD")
-            
+'''
         
         
 
@@ -313,68 +344,10 @@ def bind(function, name, version="1.0.0", pulserate=25, debug_mode=0, set_timeou
         logger.info("Running on %s"%sys.platform)
     
     logger.info("initialising plugin: %s"%name)
-
-    #this is only commented out since I'm trying to find the source of these terrible errors
     
-    try:
-        if environ["AMQP_SECURE"] == "1":
-            logger.info("Using ssl connection")
-            
-            if str(pika.__version__).split(".")[0] != '1':
-                raise Exception("Pika version %s does not support ssl connections, you must use version 1.0.0 or above"%pika.__version__)
-            
-            context = ssl.SSLContext(ssl.PROTOCOL_TLSv1_2)
-            
-            parameters = pika.ConnectionParameters(
-                host=environ["AMQP_HOST"],
-                port=int(environ["AMQP_PORT"]),
-                credentials=pika.PlainCredentials(environ["AMQP_USER"], environ["AMQP_PASS"]),
-                heartbeat=pulserate,
-                socket_timeout=10,
-                connection_attempts=1,
-                retry_delay = 5,
-                blocked_connection_timeout=120,
-                ssl = pika.SSLOptions(context))
-            
-        else:
-            logger.info("Not using ssl")
-            #set the parameters for pika
-            parameters = pika.ConnectionParameters(
-                host=environ["AMQP_HOST"],
-                port=int(environ["AMQP_PORT"]),
-                credentials=pika.PlainCredentials(environ["AMQP_USER"], environ["AMQP_PASS"]),
-                heartbeat=pulserate,
-                socket_timeout=10,
-                connection_attempts=1,
-                retry_delay = 5,
-                blocked_connection_timeout=120)
-                
-    except:
     
-        logger.info("Not using ssl")
-        #set the parameters for pika
-        parameters = pika.ConnectionParameters(
-            host=environ["AMQP_HOST"],
-            port=int(environ["AMQP_PORT"]),
-            credentials=pika.PlainCredentials(environ["AMQP_USER"], environ["AMQP_PASS"]),
-            heartbeat=pulserate,
-            socket_timeout=10,
-            connection_attempts=1,
-            retry_delay = 5,
-            blocked_connection_timeout=120)
-
-    #set up pika connection channels between rabbitmq and python
-    connection = pika.BlockingConnection(parameters)
-    
-    #add something to stop the connection hanging when it's supposed to be grabbing. This does not work
-    input_channel = connection.channel()
-    output_channel = connection.channel()
-    
-    #The confirm delivery on the input channel is an attempt to fix the hanging problem. IT MIGHT NOT WORK!!!
-    input_channel.confirm_delivery()
-    output_channel.confirm_delivery()
-
-    #set up the minio client
+    #set up the minio client. Do this before the AMPQ stuff since we keep changing
+    #out fucking minds on which version to use
     minio_client = Minio(
         environ["MINIO_HOST"] + ":" + environ["MINIO_PORT"],
         access_key=environ["MINIO_ACCESS"],
@@ -407,6 +380,92 @@ def bind(function, name, version="1.0.0", pulserate=25, debug_mode=0, set_timeou
 
     logger.info("consuming from %s"%name)
 
+    #this is only commented out since I'm trying to find the source of these terrible errors
+    
+    try:
+        if environ["AMQP_SECURE"] == "1":
+            logger.info("Using ssl connection")
+            '''
+            if str(pika.__version__).split(".")[0] != '1':
+                raise Exception("Pika version %s does not support ssl connections, you must use version 1.0.0 or above"%pika.__version__)
+            
+            context = ssl.SSLContext(ssl.PROTOCOL_TLSv1_2)
+            
+            parameters = pika.ConnectionParameters(
+                host=environ["AMQP_HOST"],
+                port=int(environ["AMQP_PORT"]),
+                credentials=pika.PlainCredentials(environ["AMQP_USER"], environ["AMQP_PASS"]),
+                heartbeat=pulserate,
+                socket_timeout=10,
+                connection_attempts=1,
+                retry_delay = 5,
+                blocked_connection_timeout=120,
+                ssl = pika.SSLOptions(context))
+            '''
+            
+            rabbit_url = "ampq://%s:%s@%s:%s/"%(environ["AMQP_USER"], environ["AMQP_PASS"], environ["AMQP_HOST"], environ["AMQP_PORT"])
+            
+            queues = [Queue(name)]
+            with Connection(rabbit_url, heartbeat=25, ssl=True) as conn:
+                worker = Worker(conn, queues)
+                worker.run()
+            
+        else:
+            logger.info("Not using ssl")
+            #set the parameters for pika
+            #initialise the celery worker
+            rabbit_url = "ampq://%s:%s@%s:%s/"%(environ["AMQP_USER"], environ["AMQP_PASS"], environ["AMQP_HOST"], environ["AMQP_PORT"])
+            
+            #set up celery connection
+            #set up celery connection
+            queues = [Queue(name)]
+            with Connection(rabbit_url, heartbeat=25) as conn:
+                worker = Worker(conn, queues)
+                worker.run()
+    except:
+    
+        logger.info("Not using ssl")
+        #set the parameters for pika
+        '''
+        parameters = pika.ConnectionParameters(
+            host=environ["AMQP_HOST"],
+            port=int(environ["AMQP_PORT"]),
+            credentials=pika.PlainCredentials(environ["AMQP_USER"], environ["AMQP_PASS"]),
+            heartbeat=pulserate,
+            socket_timeout=10,
+            connection_attempts=1,
+            retry_delay = 5,
+            blocked_connection_timeout=120)
+        '''
+        #initialise the celery worker
+        rabbit_url = "ampq://%s:%s@%s:%s/"%(environ["AMQP_USER"], environ["AMQP_PASS"], environ["AMQP_HOST"], environ["AMQP_PORT"])
+        
+        #set up celery connection
+        queues = [Queue(name)]
+        with Connection(rabbit_url, heartbeat=25) as conn:
+            worker = Worker(conn, queues)
+            worker.run()
+        
+        
+        
+        
+        
+        
+        
+    '''
+    #set up pika connection channels between rabbitmq and python
+    connection = pika.BlockingConnection(parameters)
+    
+    #add something to stop the connection hanging when it's supposed to be grabbing. This does not work
+    input_channel = connection.channel()
+    output_channel = connection.channel()
+    
+    #The confirm delivery on the input channel is an attempt to fix the hanging problem. IT MIGHT NOT WORK!!!
+    input_channel.confirm_delivery()
+    output_channel.confirm_delivery()
+
+
+
     input_queue = input_channel.queue_declare(name, durable=True)
     
     #all the stuff that needs to be passed into the callback function is stored
@@ -437,7 +496,7 @@ def bind(function, name, version="1.0.0", pulserate=25, debug_mode=0, set_timeou
     input_channel.start_consuming()
     
     logger.info("Past start consuming, not sure whats going on...")
-
+    '''
 
 def validate_single_file_function(function):
     

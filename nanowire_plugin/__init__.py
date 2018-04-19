@@ -9,7 +9,8 @@ Created on Wed Oct 25 11:30:46 2017
 """
 Provides a `bind` function to plugins so they can simply bind a function to a queue.
 """
-
+from kombu import Connection, Exchange, Queue, Producer
+from kombu.mixins import ConsumerMixin
 import traceback
 import logging
 import json
@@ -17,6 +18,8 @@ from os import environ
 from os.path import join
 
 #from ssl import PROTOCOL_TLSv1_2
+
+from minio import Minio
 
 import time
 import sys
@@ -30,6 +33,16 @@ elif sys.version_info.major == 2:
     import urllib2
 else:
     import urllib
+    
+try:
+    from Queue import Queue as qq
+except ImportError:
+    from queue import Queue as qq
+
+from threading import Thread
+
+
+import hashlib
 
 #set up the logger globally
 logger = logging.getLogger("nanowire-plugin")
@@ -188,7 +201,7 @@ def set_status(monitor_url, job_id, task_id, name, error=0):
     except:
         logger.warning("COULD NOT CONNECT TO MONITOR")
 
-
+'''
 def send(name, payload, output, input_channel, output_channel, method, minio_client, monitor_url, debug_mode):
     """unwraps a message and calls the user function"""   
     
@@ -293,6 +306,97 @@ def send(name, payload, output, input_channel, output_channel, method, minio_cli
         "job_id": payload["nmo"]["job"]["job_id"],
         "task_id": payload["nmo"]["task"]["task_id"]
     }
+'''
+
+#Rewrite send for the celery library
+def send(name, payload, output, connection, minio_client, monitor_url, message, debug_mode):
+    """unwraps a message and calls the user function"""   
+    
+    #check the plugin name
+    if not isinstance(name, str):
+        raise Exception("plugin name passed to send should be a string, it is actually %s"%name)    
+
+    #check the payload
+    validate_payload(payload)
+    
+    #log some info about what the send function has been given
+    logger.info("consumed message")
+    
+    next_plugin = inform_monitor(payload, name, monitor_url, minio_client)
+
+
+    #python2 has a nasty habit of converting things to unicode so this forces that behaviour out
+    if str(type(next_plugin)) == "<type 'unicode'>":
+        next_plugin = str(next_plugin)
+        
+        
+    if isinstance(output, str):
+        err = output
+    elif isinstance(output, dict):
+        err = 0
+    elif output == None:
+        err = "NO OUTPUT WAS RETURNED"
+    
+       
+    try:
+        set_status(monitor_url,
+                   payload["nmo"]["job"]["job_id"],
+                   payload["nmo"]["task"]["task_id"],
+                   name, error=err)
+    except Exception as exp:
+        logger.warning("failed to set status")
+        logger.warning("exception: %s"%str(exp))
+        logger.warning("job_id: %s"%payload["nmo"]["job"]["job_id"])
+        logger.warning("task_id: %s"%payload["nmo"]["task"]["task_id"])
+        
+    #this log is for debug but makes the logs messy when left in production code
+    #logger.info("Result is:- %s"%str(result))
+
+    #now set the payload jsonld to be the plugin output, after ensuring that the output is
+    # in EXACTLY the right format
+    
+    out_jsonld = clean_function_output(output, payload)
+       
+    try:
+        group = payload['nmo']['source']['misc']['isGroup']
+    except:
+        group = False
+        
+    if not group:
+
+        if out_jsonld != None:
+            try:
+                payload["jsonld"] = out_jsonld
+            except:
+                logger.warning("could not set payload")
+    
+    if isinstance(output, dict):
+        if 'nmo' in output.keys():    
+        
+            if payload['nmo'] != output['nmo']:
+                
+                payload['nmo'] = output['nmo']
+
+    logger.info("finished running user code on %s"%payload["nmo"]["source"]["name"])
+    
+    if debug_mode > 1:
+        logger.warning("SENDING:-")
+        logger.warning(json.dumps(payload))
+    
+    #send the info from this plugin to the next one in the pipeline
+    send_to_next_plugin(next_plugin, payload, connection)
+    
+    #Let the frontend know that we're done
+    #input_channel.basic_ack(method.delivery_tag)
+    message.ack()
+
+    return {
+        "job_id": payload["nmo"]["job"]["job_id"],
+        "task_id": payload["nmo"]["task"]["task_id"]
+    }
+
+
+
 
 
 def get_url(payload, minio_cl):
@@ -385,8 +489,9 @@ def inform_monitor(payload, name, monitor_url, minio_client):
             
             
     return next_plugin
-    
-    
+   
+#This has to be rewritten for celery
+'''
 def send_to_next_plugin(next_plugin, payload, output_channel):
     
     if not isinstance(next_plugin, str) and not next_plugin==None:
@@ -427,8 +532,56 @@ def send_to_next_plugin(next_plugin, payload, output_channel):
 
     else:
         logger.warning("There is no next plugin, if this is not a storage plugin you may loose analysis data")
+'''
+def send_to_next_plugin(next_plugin, payload, conn):
+    
+    if not isinstance(next_plugin, str) and not next_plugin==None:
+        raise Exception("Next plugin should be a string if present or None if no next plugin. It is actually %s, %s"%(next_plugin, str(type(next_plugin))))
+
+    if not isinstance(payload, dict):
+        raise Exception("payload should be a dictionary it is in fact: %s, %s"%(payload, str(type(payload))))
+        
+    if "nmo" not in payload:
+        raise Exception("nmo is critical to payload however is missing, payload is currently %s"%payload)
+    
+    if next_plugin != None:
+        '''
+        #set up a producer to send the message forwards to the next plugin
+        producer = connection.Producer()
+        
+        producer.publish(payload, 
+                         retry=True,
+                         exchange='',
+                         declare)
+        '''
+        
+        #set up the producer to send messages to the next plugin
+        out_channel = conn.channel()
+
+        producer = Producer(channel=out_channel)
+        
+        
+        queue = Queue(name=next_plugin)
+        
+        queue.maybe_bind(conn)
+        
+        queue.declare()
+        
+        producer.publish(payload, exchange='', routing_key=next_plugin)
+
+        logger.info("Output was published for %s"%payload["nmo"]["source"]["name"])
 
 
+        '''
+        #if the result sent ok then log that everything should be fine
+        if send_result:
+                logger.info("Output was published for %s"%payload["nmo"]["source"]["name"])
+        else:
+            logger.warning("Output was not published for %s"%payload["nmo"]["source"]["name"])
+            logger.warning("next plugin: %s"%next_plugin)
+        '''
+    else:
+        logger.warning("There is no next plugin, if this is not a storage plugin you may loose analysis data")
 
 def clean_function_output(result, payload):
     
@@ -444,7 +597,7 @@ def clean_function_output(result, payload):
     try:
         group = payload['nmo']['source']['misc']['isGroup']
     except:
-        group = False    
+        group = False
     
     #if the plugin has not produced a dictionary then we look to replace it with
     #something more sensible
@@ -489,5 +642,3 @@ def clean_function_output(result, payload):
     else:
         return payload["jsonld"]
 
-from nanowire_plugin import group_tools
-from nanowire_plugin import single_file_tools

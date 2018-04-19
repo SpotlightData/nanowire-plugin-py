@@ -20,7 +20,7 @@ setup(
     version=VERSION,
     packages=find_packages(),
     keywords=['nanowire', 'spotlight data'],
-    requires=['pika', 'minio'],
+    requires=['pika', 'minio', "kombu"],
     url="https://github.com/SpotlightData/nanowire-plugin-py",
     author='Barnaby "Southclaws" Keene/Stuart Bowe',
     author_email='stuart@spotlightdata.co.uk',
@@ -28,7 +28,7 @@ setup(
     maintainer_email='stuart@spotlightdata.co.uk',
     license='MIT',
     include_package_data=True,
-    install_requires=["minio", "pika"],
+    install_requires=["minio", "pika", "kombu"],
     data_files=[
         ('.', ['VERSION'])
     ]
