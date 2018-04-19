@@ -27,7 +27,7 @@ import ssl
 from threading import Thread
 #import threading
 from multiprocessing import  Process, Queue
-
+from kombu.mixins import ConsumerMixin
 from kombu import Connection, Exchange, Queue
 
 import time
