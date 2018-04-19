@@ -64,6 +64,7 @@ class Worker(ConsumerMixin):
         self.connection = connection
         self.queues = queues
         self.q = qq()
+        
         self.workThread = Thread(target=self.run_tasks)
         self.workThread.daemon = True
         self.workThread.start()

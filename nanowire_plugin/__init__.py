@@ -550,7 +550,7 @@ def send_to_next_plugin(next_plugin, payload, conn):
         
     if "nmo" not in payload:
         raise Exception("nmo is critical to payload however is missing, payload is currently %s"%payload)
-    
+    logger.info("RUNNING SEND TO NEXT PLUGIN")
     if next_plugin != None:
         '''
         #set up a producer to send the message forwards to the next plugin
@@ -561,17 +561,24 @@ def send_to_next_plugin(next_plugin, payload, conn):
                          exchange='',
                          declare)
         '''
+        
+        logger.info("CREATING PAYLOAD STRING")
         send_payload = json.dumps(payload)
+        
+        
+        logger.info("CREATE A CHANNEL TO SEND THE DATA THROUGH")
         #set up the producer to send messages to the next plugin
         out_channel = conn.channel()
-
+        logger.info("CREATE A PUBLISHER")
         producer = Producer(channel=out_channel)
         
-        
+        logger.info("SET UP THE QUEUE")
         queue = Queue(name=next_plugin)
         
+        logger.info("BIND TO THE QUEUE")
         queue.maybe_bind(conn)
         
+        logger.info("MAKE SURE THE QUEUE EXISTS")
         queue.declare()
         
         logger.info("Trying to publish result to %s"%next_plugin)
