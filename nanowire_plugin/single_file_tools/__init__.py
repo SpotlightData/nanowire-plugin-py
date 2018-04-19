@@ -194,9 +194,9 @@ class on_request_class():
                         output = self.process_queue.get()
                         #put the sha-1 hash on the confirm queue
                         logger.info("GENERATING CONFIRM MESSAGE")
-                        confirm = hash_func(str(output))
+                        #confirm = hash_func(str(output))
                         logger.info("SENDING CONFIRM MESSAGE")
-                        self.confirm_queue.put_nowait(confirm)
+                        #self.confirm_queue.put_nowait(confirm)
                         processing = False
                     except:
                         logger.warning(self.process_queue.qsize())
@@ -241,7 +241,7 @@ class on_request_class():
         if self.debug_mode > 0:
             logger.info("PUTTING DATA ON QUEUE")
         self.process_queue.put_nowait(result)
-        
+        '''
                 
         missing_message_time = 5
         #confirm that the data has been read
@@ -256,7 +256,7 @@ class on_request_class():
                 conf = self.confirm_queue.get_nowait()
                 if conf == conf_msg:
                     #if the message is confirmed we need to clear all queues because everyting is happening as expected
-                    if self.debug_mode > 2:
+                    if self.debug_mode > 1:
                         logger.info("DATA TRANSFER CONFIRMED")
                         
                         
@@ -269,21 +269,26 @@ class on_request_class():
                     logger.warning("MESSAGE WAS CHANGED WHEN PASSING BETWEEN THREADS")
                     logger.warning(str(conf))
                     logger.warning(str(conf_msg))
+                    logger.warning(str(result))
                     
                     clear_queue(self.confirm_queue)
                     clear_queue(self.process_queue)
-                    self.process_queue.put_nowait(result)
+                    #self.process_queue.put_nowait(result)
                     
                     
             time.sleep(0.1)
             
             if time.time() - handshake_t0 >= missing_message_time:
                 logger.warning("MESSAGE DISAPPEARD FROM THE QUEUE WITHOUT CONFIRMING")
+                logger.warning(self.confirm_queue.qsize())
+                logger.warning(self.process_queue.qsize())
                 clear_queue(self.confirm_queue)
                 clear_queue(self.process_queue)
+                logger.warning(self.confirm_queue.qsize())
+                logger.warning(self.process_queue.qsize())
                 self.process_queue.put(result)
                 handshake_t0 = time.time()
-                
+        '''
         if self.debug_mode > 0:
             logger.info("FINISHED PROCESSING THREAD")
             
