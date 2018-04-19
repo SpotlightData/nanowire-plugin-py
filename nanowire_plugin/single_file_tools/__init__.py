@@ -72,7 +72,7 @@ class Worker(ConsumerMixin):
     def get_consumers(self, Consumer, channel):
         return [Consumer(queues=self.queues,
                          callbacks=[self.on_message],
-                         prefetch_count=1)]
+                         prefetch_count=1, no_ack=False)]
 
     def on_message(self, body, message):
         logger.info("new message to internal queue")

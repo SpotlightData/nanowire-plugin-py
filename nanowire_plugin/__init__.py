@@ -567,30 +567,35 @@ def send_to_next_plugin(next_plugin, payload, conn):
         
         
         logger.info("CREATE A CHANNEL TO SEND THE DATA THROUGH")
+        
+        
         #set up the producer to send messages to the next plugin
-        out_channel = conn.channel()
-        logger.info("CREATE A PUBLISHER")
-        producer = Producer(channel=out_channel)
         
-        logger.info("SET UP THE QUEUE")
-        queue = Queue(name=next_plugin)
         
-        logger.info("BIND TO THE QUEUE")
-        queue.maybe_bind(conn)
-        
-        logger.info("MAKE SURE THE QUEUE EXISTS")
-        queue.declare()
-        
-        logger.info("Trying to publish result to %s"%next_plugin)
-        logger.info(type(send_payload))
-        
-        try:
-            producer.publish(send_payload, exchange='', routing_key=next_plugin, retry=False)
-        except:
-            #if we can't publish we A) need to know why and B) need to kill everything
-            logger.warning(traceback.format_exc())
-            thread.interrupt_main()
+        #use the with argument to avoid creating too many channels and causing a hang
+        with conn.channel() as out_channel:
+            logger.info("CREATE A PUBLISHER")
+            producer = Producer(channel=out_channel)
             
+            logger.info("SET UP THE QUEUE")
+            queue = Queue(name=next_plugin)
+            
+            logger.info("BIND TO THE QUEUE")
+            queue.maybe_bind(conn)
+            
+            logger.info("MAKE SURE THE QUEUE EXISTS")
+            queue.declare()
+            
+            logger.info("Trying to publish result to %s"%next_plugin)
+            logger.info(type(send_payload))
+            
+            try:
+                producer.publish(send_payload, exchange='', routing_key=next_plugin, retry=False)
+            except:
+                #if we can't publish we A) need to know why and B) need to kill everything
+                logger.warning(traceback.format_exc())
+                thread.interrupt_main()
+                
 
         logger.info("Output was published for %s"%payload["nmo"]["source"]["name"])
 
