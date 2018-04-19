@@ -74,7 +74,7 @@ class Worker(ConsumerMixin):
                          prefetch_count=1)]
 
     def on_message(self, body, message):
-        print("new message to internal queue")
+        logger.info("new message to internal queue")
         self.q.put((body, message))
 
     def run_tasks(self):
@@ -88,12 +88,44 @@ class Worker(ConsumerMixin):
                 break
 
     def on_task(self, body, message):
-        print("run task")
+        logger.info("run task")
+        try:
+            data = body.decode("utf-8")
+        except:
+            data = body
 
-        nmo = self.payload['nmo']
-        jsonld = self.payload['jsonld']
+        if data == None:
+            
+            logger.info("Empty input")
+            
+        else:
+            #try to load the payload into a dictionary
+            try:
+                payload = json.loads(data)
+                
+                logger.info("PAYLOAD EXTRACTED")
+                logger.info(str(payload))
+                logger.info(type(payload))
+            except:
+                
+                if sys.version_info.major == 3:
+                    set_status(self.monitor_url, "Unknown", "Unknown", self.name, error="Message passed to %s is incomplete")
+                else:
+                    set_status(self.monitor_url, u"Unknown", u"Unknown", self.name, error="Message passed to %s is incomplete")
+                #remove the bad file from the queue
+                message.ack()
+                logger.error("The end of the file may have been cut off by rabbitMQ, last 10 characters are: %s"%data[0:10])
+                raise Exception("Problem with payload, payload should be json serializeable. Payload is %s"%data)
+                
+            #check that the payload is valid. If not this function returns the errors that tell the user why it's not
+            #valid
+            validate_payload(payload)
+            
+
+        nmo = payload['nmo']
+        jsonld = payload['jsonld']
         #pull the url from minio
-        url = get_url(self.payload, self.minio_client)
+        url = get_url(payload, self.minio_client)
         #************** There needs to be some way of getting the url before we hit this
         
         try:
@@ -108,6 +140,7 @@ class Worker(ConsumerMixin):
                 result = exp
                 logger.info("THERE WAS A PROBLEM RUNNING THE MAIN FUNCTION: %s"%str(result))
         
+        job_stats = send(self.name, payload, result, self.connection, self.minio_client, self.monitor_url, message, self.debug_mode)
 
         message.ack()
 
@@ -403,24 +436,24 @@ def bind(function, name, version="1.0.0", pulserate=25, debug_mode=0, set_timeou
                 ssl = pika.SSLOptions(context))
             '''
             
-            rabbit_url = "ampq://%s:%s@%s:%s/"%(environ["AMQP_USER"], environ["AMQP_PASS"], environ["AMQP_HOST"], environ["AMQP_PORT"])
+            rabbit_url = "amqp://%s:%s@%s:%s/"%(environ["AMQP_USER"], environ["AMQP_PASS"], environ["AMQP_HOST"], environ["AMQP_PORT"])
             
             queues = [Queue(name)]
             with Connection(rabbit_url, heartbeat=25, ssl=True) as conn:
-                worker = Worker(conn, queues)
+                worker = Worker(conn, queues, function, name, minio_client, monitor_url, debug_mode)
                 worker.run()
             
         else:
             logger.info("Not using ssl")
             #set the parameters for pika
             #initialise the celery worker
-            rabbit_url = "ampq://%s:%s@%s:%s/"%(environ["AMQP_USER"], environ["AMQP_PASS"], environ["AMQP_HOST"], environ["AMQP_PORT"])
+            rabbit_url = "amqp://%s:%s@%s:%s/"%(environ["AMQP_USER"], environ["AMQP_PASS"], environ["AMQP_HOST"], environ["AMQP_PORT"])
             
             #set up celery connection
             #set up celery connection
             queues = [Queue(name)]
             with Connection(rabbit_url, heartbeat=25) as conn:
-                worker = Worker(conn, queues)
+                worker = Worker(conn, queues, function, name, minio_client, monitor_url, debug_mode)
                 worker.run()
     except:
     
@@ -438,12 +471,12 @@ def bind(function, name, version="1.0.0", pulserate=25, debug_mode=0, set_timeou
             blocked_connection_timeout=120)
         '''
         #initialise the celery worker
-        rabbit_url = "ampq://%s:%s@%s:%s/"%(environ["AMQP_USER"], environ["AMQP_PASS"], environ["AMQP_HOST"], environ["AMQP_PORT"])
+        rabbit_url = "amqp://%s:%s@%s:%s/"%(environ["AMQP_USER"], environ["AMQP_PASS"], environ["AMQP_HOST"], environ["AMQP_PORT"])
         
         #set up celery connection
         queues = [Queue(name)]
         with Connection(rabbit_url, heartbeat=25) as conn:
-            worker = Worker(conn, queues)
+            worker = Worker(conn, queues, function, name, minio_client, monitor_url, debug_mode)
             worker.run()
         
         

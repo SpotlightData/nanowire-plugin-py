@@ -17,6 +17,8 @@ import json
 from os import environ
 from os.path import join
 
+import datetime
+
 #from ssl import PROTOCOL_TLSv1_2
 
 from minio import Minio
@@ -40,6 +42,11 @@ except ImportError:
     from queue import Queue as qq
 
 from threading import Thread
+
+try:
+    import thread
+except:
+    import _thread as thread
 
 
 import hashlib
@@ -320,7 +327,7 @@ def send(name, payload, output, connection, minio_client, monitor_url, message, 
     validate_payload(payload)
     
     #log some info about what the send function has been given
-    logger.info("consumed message")
+    logger.info("LETTING MONITOR KNOW PROCESSING HAS BEEN DONE")
     
     next_plugin = inform_monitor(payload, name, monitor_url, minio_client)
 
@@ -377,7 +384,7 @@ def send(name, payload, output, connection, minio_client, monitor_url, message, 
                 
                 payload['nmo'] = output['nmo']
 
-    logger.info("finished running user code on %s"%payload["nmo"]["source"]["name"])
+    logger.info("finished running user code on %s at %s"%(payload["nmo"]["source"]["name"], str(datetime.datetime.now())))
     
     if debug_mode > 1:
         logger.warning("SENDING:-")
@@ -554,7 +561,7 @@ def send_to_next_plugin(next_plugin, payload, conn):
                          exchange='',
                          declare)
         '''
-        
+        send_payload = json.dumps(payload)
         #set up the producer to send messages to the next plugin
         out_channel = conn.channel()
 
@@ -567,7 +574,16 @@ def send_to_next_plugin(next_plugin, payload, conn):
         
         queue.declare()
         
-        producer.publish(payload, exchange='', routing_key=next_plugin)
+        logger.info("Trying to publish result to %s"%next_plugin)
+        logger.info(type(send_payload))
+        
+        try:
+            producer.publish(send_payload, exchange='', routing_key=next_plugin, retry=False)
+        except:
+            #if we can't publish we A) need to know why and B) need to kill everything
+            logger.warning(traceback.format_exc())
+            thread.interrupt_main()
+            
 
         logger.info("Output was published for %s"%payload["nmo"]["source"]["name"])
 
