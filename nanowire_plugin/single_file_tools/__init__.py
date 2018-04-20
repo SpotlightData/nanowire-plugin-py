@@ -64,6 +64,7 @@ class Worker(ConsumerMixin):
         self.connection = connection
         self.queues = queues
         self.q = qq()
+        self.out_channel = self.connection.channel()
         
         self.workThread = Thread(target=self.run_tasks)
         self.workThread.daemon = True
@@ -105,8 +106,8 @@ class Worker(ConsumerMixin):
                 payload = json.loads(data)
                 
                 logger.info("PAYLOAD EXTRACTED")
-                logger.info(str(payload))
-                logger.info(type(payload))
+                #logger.info(str(payload))
+                #logger.info(type(payload))
             except:
                 
                 if sys.version_info.major == 3:
@@ -141,9 +142,9 @@ class Worker(ConsumerMixin):
                 result = exp
                 logger.info("THERE WAS A PROBLEM RUNNING THE MAIN FUNCTION: %s"%str(result))
         
-        job_stats = send(self.name, payload, result, self.connection, self.minio_client, self.monitor_url, message, self.debug_mode)
+        job_stats = send(self.name, payload, result, self.connection, self.out_channel, self.minio_client, self.monitor_url, message, self.debug_mode)
 
-        message.ack()
+        #message.ack()
 
 
 
@@ -172,193 +173,6 @@ def clear_queue(q):
     except:
         pass
 
-
-#This huge block is all pika
-'''
-#create a class so we can feed things into the on_request function
-class on_request_class():
-    
-    def __init__(self, connection, function, name, minio_client, output_channel, monitor_url, debug_mode, set_timeout):
-        
-        #check to see if the input function has the correct number of arguments. This changes depending on whether we're working
-        #in python2 or python3 because apparantly unit testing is super important and my time isn't
-
-        #check the function we're working with is valid        
-        validate_single_file_function(function)        
-        
-        #setting up the class type checking
-        if not isinstance(name, str):
-            raise Exception("plugin name should be a string, it is actually %s"%name)
-            
-        #setting up the class type checking
-        if not isinstance(monitor_url, str):
-            raise Exception("monitor_url should be a string, it is actually %s"%monitor_url)
-        
-        if not str(type(output_channel)) == "<class 'pika.adapters.blocking_connection.BlockingChannel'>" and "mock" not in str(output_channel).lower():
-            raise Exception("output channel should be a pika blocking connection channel it is actually %s"%output_channel)
-        
-        if not output_channel.is_open:
-            raise Exception("Output channel is closed")
-            
-        #check the connection
-            
-        if not connection.is_open:
-            raise Exception("Connection to rabbitmq is closed")
-            
-            
-        #check the input queue is a pika queue, or a mock of one
-        self.name = name
-        self.timeout = set_timeout
-        self.connection = connection
-        self.function = function
-        self.minio_client = minio_client
-        self.monitor_url = monitor_url
-        self.output_channel = output_channel
-        self.process_queue = Queue()
-        self.debug_mode = debug_mode
-        self.confirm_queue = Queue()
-
-    def on_request(self, ch, method, props, body):
-        
-        #check the channel is open
-        if not ch.is_open:
-            raise Exception("Input channel is closed")
-
-        #check the body is a byte string
-        if not isinstance(body, bytes):
-            raise Exception("The body data should be a byte stream, it is actually %s, %s"%(body, type(body)))
-            
-        #set up logging inside the server functions
-        logger.setLevel(logging.DEBUG)
-        
-        data = body.decode("utf-8")
-
-        if data == None:
-            
-            logger.info("Empty input")
-            
-        else:
-
-            #try to load the payload into a dictionary
-            try:
-                self.payload = json.loads(data)
-            except:
-                if sys.version_info.major == 3:
-                    set_status(self.monitor_url, "Unknown", "Unknown", self.name, error="Message passed to %s is incomplete")
-                else:
-                    set_status(self.monitor_url, u"Unknown", u"Unknown", self.name, error="Message passed to %s is incomplete")
-                #remove the bad file from the queue
-                ch.basic_ack(method.delivery_tag)
-                logger.error("The end of the file may have been cut off by rabbitMQ, last 10 characters are: %s"%data[0:10])
-                raise Exception("Problem with payload, payload should be json serializeable. Payload is %s"%data)
-                
-            #check that the payload is valid. If not this function returns the errors that tell the user why it's not
-            #valid
-            validate_payload(self.payload)
-            
-
-        #handle the function call here!!!
-        #proc_thread = threading.Thread(target=self.run_processing_thread)
-        #proc_thread.setDaemon(True)
-        #proc_thread.start()
-
-        #handle the function call on a second thread
-        p = Process(target=self.run_processing_thread, args=())
-        p.start()
-        
-        processing = True
-        
-        pacemaker_pluserate = 10        
-        
-        #set up t=0 for the heartbeats
-        beat_time = time.time()
-        
-        start_time = time.time()
-        
-        #wait here for the process to finish
-        while processing:
-            
-            time_since_last_heartbeat = time.time() - beat_time
-            #perform the heartbeat every n seconds
-            if time_since_last_heartbeat >= pacemaker_pluserate:
-                self.connection.process_data_events()
-                
-                #reset the timer on the pacemaker
-                beat_time = time.time()
-                time_since_last_heartbeat = 0
-            
-            if self.timeout > 0:
-                time_taken = time.time() - start_time
-                if time_taken > self.timeout:
-                    #if we exceed the timeout we are going to want to kill the pod
-                    raise Exception("The plugin has timed out, consider increasing timeout or using smaller files")
-            
-            
-            messages = self.process_queue.qsize()
-            
-            if not self.process_queue.empty():
-                if self.debug_mode >= 0:
-                    logger.info("DATA FOUND ON QUEUE")
-            
-                if messages == 1:
-                    try:
-                        logger.info("TAKING DATA FROM QUEUE")
-                        output = self.process_queue.get()
-                        #put the sha-1 hash on the confirm queue
-                        logger.info("GENERATING CONFIRM MESSAGE")
-                        #confirm = hash_func(str(output))
-                        logger.info("SENDING CONFIRM MESSAGE")
-                        #self.confirm_queue.put_nowait(confirm)
-                        processing = False
-                    except:
-                        logger.warning(self.process_queue.qsize())
-                        logger.warning("=========================")
-                        logger.warning(traceback.format_exc())
-                        #'Result did not get put onto the processing queue'
-                    
-                elif messages > 1:
-                    raise Exception("Something has gone wrong, there are %s multiple messages on the processing queue"%str(self.process_queue.qsize()))      
-        
-        #run the send command with a 2 minute timeout
-        send(self.name, self.payload, output, ch, self.output_channel, method, self.minio_client, self.monitor_url, self.debug_mode)
-        #returned = send(self.name, payload, ch, self.output_channel, method, props, self.minio_client, self.monitor_url, self.function)
-        
-
-        logger.info("Finished running user code at %s"%str(datetime.datetime.now()))
-        logger.info("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
-
-
-    def run_processing_thread(self):
-        
-        logger.info("RUNNING PROCESSING THREAD")
-        
-        nmo = self.payload['nmo']
-        jsonld = self.payload['jsonld']
-        #pull the url from minio
-        url = get_url(self.payload, self.minio_client)
-        #************** There needs to be some way of getting the url before we hit this
-        
-        try:
-            #result = self.function(nmo, jsonld, url)
-            result = run_function(self.function, nmo, jsonld, url)
-            
-        except Exception as exp:
-            if self.debug_mode > 0:
-                result = traceback.format_exc()
-                logger.info("THERE WAS A PROBLEM RUNNING THE MAIN FUNCTION: %s"%str(result))
-            else:
-                result = exp
-                logger.info("THERE WAS A PROBLEM RUNNING THE MAIN FUNCTION: %s"%str(result))
-        
-        if self.debug_mode > 0:
-            logger.info("PUTTING DATA ON QUEUE")
-        self.process_queue.put_nowait(result)
-
-        if self.debug_mode > 0:
-            logger.info("FINISHED PROCESSING THREAD")
-'''
-        
-        
 
 def bind(function, name, version="1.0.0", pulserate=25, debug_mode=0, set_timeout=0):
     """binds a function to the input message queue"""
@@ -419,24 +233,7 @@ def bind(function, name, version="1.0.0", pulserate=25, debug_mode=0, set_timeou
     try:
         if environ["AMQP_SECURE"] == "1":
             logger.info("Using ssl connection")
-            '''
-            if str(pika.__version__).split(".")[0] != '1':
-                raise Exception("Pika version %s does not support ssl connections, you must use version 1.0.0 or above"%pika.__version__)
-            
-            context = ssl.SSLContext(ssl.PROTOCOL_TLSv1_2)
-            
-            parameters = pika.ConnectionParameters(
-                host=environ["AMQP_HOST"],
-                port=int(environ["AMQP_PORT"]),
-                credentials=pika.PlainCredentials(environ["AMQP_USER"], environ["AMQP_PASS"]),
-                heartbeat=pulserate,
-                socket_timeout=10,
-                connection_attempts=1,
-                retry_delay = 5,
-                blocked_connection_timeout=120,
-                ssl = pika.SSLOptions(context))
-            '''
-            
+
             rabbit_url = "amqp://%s:%s@%s:%s/"%(environ["AMQP_USER"], environ["AMQP_PASS"], environ["AMQP_HOST"], environ["AMQP_PORT"])
             
             queues = [Queue(name)]
@@ -460,17 +257,7 @@ def bind(function, name, version="1.0.0", pulserate=25, debug_mode=0, set_timeou
     
         logger.info("Not using ssl")
         #set the parameters for pika
-        '''
-        parameters = pika.ConnectionParameters(
-            host=environ["AMQP_HOST"],
-            port=int(environ["AMQP_PORT"]),
-            credentials=pika.PlainCredentials(environ["AMQP_USER"], environ["AMQP_PASS"]),
-            heartbeat=pulserate,
-            socket_timeout=10,
-            connection_attempts=1,
-            retry_delay = 5,
-            blocked_connection_timeout=120)
-        '''
+
         #initialise the celery worker
         rabbit_url = "amqp://%s:%s@%s:%s/"%(environ["AMQP_USER"], environ["AMQP_PASS"], environ["AMQP_HOST"], environ["AMQP_PORT"])
         
@@ -482,55 +269,6 @@ def bind(function, name, version="1.0.0", pulserate=25, debug_mode=0, set_timeou
         
         
         
-        
-        
-        
-        
-    '''
-    #set up pika connection channels between rabbitmq and python
-    connection = pika.BlockingConnection(parameters)
-    
-    #add something to stop the connection hanging when it's supposed to be grabbing. This does not work
-    input_channel = connection.channel()
-    output_channel = connection.channel()
-    
-    #The confirm delivery on the input channel is an attempt to fix the hanging problem. IT MIGHT NOT WORK!!!
-    input_channel.confirm_delivery()
-    output_channel.confirm_delivery()
-
-
-
-    input_queue = input_channel.queue_declare(name, durable=True)
-    
-    #all the stuff that needs to be passed into the callback function is stored
-    #in this object so that it can be easily passed through
-    requester = on_request_class(connection, function, name, minio_client, output_channel, monitor_url, debug_mode, set_timeout)
-    
-    #set the queue length to one
-    input_channel.basic_qos(prefetch_count=1)
-    
-    #find some things out about the way basic_consume has changed
-    #print("---------------------------------")
-    #print(inspect.getargspec(input_channel.basic_consume))
-    #print(name)
-    
-    #set up the function for running the users code on the input message
-    input_channel.basic_consume(name, requester.on_request, auto_ack=False)
-    
-    
-    #thread = threading.Thread(target=requester.countdown_timer.begin_countdown)
-    #thread.setDaemon(True)
-    #thread.start()
-    if debug_mode > 0:
-        #print("Created basic consumer")
-        logger.info("Created basic consumer")
-        #print("ENTERING THE FUNCTION")
-
-        
-    input_channel.start_consuming()
-    
-    logger.info("Past start consuming, not sure whats going on...")
-    '''
 
 def validate_single_file_function(function):
     

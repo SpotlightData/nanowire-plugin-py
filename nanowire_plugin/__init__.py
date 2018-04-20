@@ -208,115 +208,8 @@ def set_status(monitor_url, job_id, task_id, name, error=0):
     except:
         logger.warning("COULD NOT CONNECT TO MONITOR")
 
-'''
-def send(name, payload, output, input_channel, output_channel, method, minio_client, monitor_url, debug_mode):
-    """unwraps a message and calls the user function"""   
-    
-    #check the plugin name
-    if not isinstance(name, str):
-        raise Exception("plugin name passed to send should be a string, it is actually %s"%name)    
-
-    
-    #check that the input channel is indeed a pika channel
-    if not str(type(input_channel)) == "<class 'pika.adapters.blocking_connection.BlockingChannel'>"  and "mock" not in str(input_channel).lower():
-            raise Exception("Input channel should be a pika blocking connection channel it is actually %s"%output_channel)
-        
-    #check the input channel is open
-    if not input_channel.is_open:
-        raise Exception("Input channel is closed") 
-    
-    #check that the output channel is indeed a pika channel
-    if not str(type(output_channel)) == "<class 'pika.adapters.blocking_connection.BlockingChannel'>" and "mock" not in str(output_channel).lower():
-            raise Exception("Output channel should be a pika blocking connection channel it is actually %s"%output_channel)
-        
-    #check the output channel is open
-    if not output_channel.is_open:
-        raise Exception("Output channel is closed")
-        
-
-    #check the payload
-    validate_payload(payload)
-    
-    #log some info about what the send function has been given
-    logger.info("consumed message")
-    logger.info("channel %s"%input_channel)
-    logger.info("method %s"%method)
-    
-    next_plugin = inform_monitor(payload, name, monitor_url, minio_client)
-
-
-    #python2 has a nasty habit of converting things to unicode so this forces that behaviour out
-    if str(type(next_plugin)) == "<type 'unicode'>":
-        next_plugin = str(next_plugin)
-        
-        
-    if isinstance(output, str):
-        err = output
-    elif isinstance(output, dict):
-        err = 0
-    elif output == None:
-        err = "NO OUTPUT WAS RETURNED"
-    
-       
-    try:
-        set_status(monitor_url,
-                   payload["nmo"]["job"]["job_id"],
-                   payload["nmo"]["task"]["task_id"],
-                   name, error=err)
-    except Exception as exp:
-        logger.warning("failed to set status")
-        logger.warning("exception: %s"%str(exp))
-        logger.warning("job_id: %s"%payload["nmo"]["job"]["job_id"])
-        logger.warning("task_id: %s"%payload["nmo"]["task"]["task_id"])
-        
-    #this log is for debug but makes the logs messy when left in production code
-    #logger.info("Result is:- %s"%str(result))
-
-    #now set the payload jsonld to be the plugin output, after ensuring that the output is
-    # in EXACTLY the right format
-    
-    out_jsonld = clean_function_output(output, payload)
-       
-    try:
-        group = payload['nmo']['source']['misc']['isGroup']
-    except:
-        group = False
-        
-    if not group:
-
-        if out_jsonld != None:
-            try:
-                payload["jsonld"] = out_jsonld
-            except:
-                logger.warning("could not set payload")
-    
-    if isinstance(output, dict):
-        if 'nmo' in output.keys():    
-        
-            if payload['nmo'] != output['nmo']:
-                
-                payload['nmo'] = output['nmo']
-
-    logger.info("finished running user code on %s"%payload["nmo"]["source"]["name"])
-    
-    if debug_mode > 1:
-        logger.warning("SENDING:-")
-        logger.warning(json.dumps(payload))
-    
-    #send the info from this plugin to the next one in the pipeline
-    send_to_next_plugin(next_plugin, payload, output_channel)
-    
-    #Let the frontend know that we're done
-    input_channel.basic_ack(method.delivery_tag)
-
-    return {
-        "job_id": payload["nmo"]["job"]["job_id"],
-        "task_id": payload["nmo"]["task"]["task_id"]
-    }
-'''
-
 #Rewrite send for the celery library
-def send(name, payload, output, connection, minio_client, monitor_url, message, debug_mode):
+def send(name, payload, output, connection, out_channel, minio_client, monitor_url, message, debug_mode):
     """unwraps a message and calls the user function"""   
     
     #check the plugin name
@@ -391,7 +284,7 @@ def send(name, payload, output, connection, minio_client, monitor_url, message, 
         logger.warning(json.dumps(payload))
     
     #send the info from this plugin to the next one in the pipeline
-    send_to_next_plugin(next_plugin, payload, connection)
+    send_to_next_plugin(next_plugin, payload, connection, out_channel)
     
     #Let the frontend know that we're done
     #input_channel.basic_ack(method.delivery_tag)
@@ -401,10 +294,6 @@ def send(name, payload, output, connection, minio_client, monitor_url, message, 
         "job_id": payload["nmo"]["job"]["job_id"],
         "task_id": payload["nmo"]["task"]["task_id"]
     }
-
-
-
-
 
 def get_url(payload, minio_cl):
     
@@ -497,50 +386,8 @@ def inform_monitor(payload, name, monitor_url, minio_client):
             
     return next_plugin
    
-#This has to be rewritten for celery
-'''
-def send_to_next_plugin(next_plugin, payload, output_channel):
-    
-    if not isinstance(next_plugin, str) and not next_plugin==None:
-        raise Exception("Next plugin should be a string if present or None if no next plugin. It is actually %s, %s"%(next_plugin, str(type(next_plugin))))
 
-    if not isinstance(payload, dict):
-        raise Exception("payload should be a dictionary it is in fact: %s, %s"%(payload, str(type(payload))))
-        
-    if "nmo" not in payload:
-        raise Exception("nmo is critical to payload however is missing, payload is currently %s"%payload)
-    
-    #check that the output channel is indeed a pika channel
-    if not str(type(output_channel)) == "<class 'pika.adapters.blocking_connection.BlockingChannel'>" and "mock" not in str(output_channel).lower():
-            raise Exception("output channel should be a pika blocking connection channel it is actually %s"%output_channel)
-        
-    #check the output channel is open
-    if not output_channel.is_open:
-        raise Exception("Output channel is closed") 
-
-    if next_plugin != None:
-            
-        #declare a queue for outputing the results to the next plugin
-        output_channel.queue_declare(
-            next_plugin,
-            durable=True
-            )
-        
-        
-        #send the result from this plugin to the next plugin in the pipeline
-        send_result = output_channel.basic_publish("", next_plugin, json.dumps(payload), pika.BasicProperties(content_type='text/plain', delivery_mode=2))
-
-        #if the result sent ok then log that everything should be fine
-        if send_result:
-                logger.info("Output was published for %s"%payload["nmo"]["source"]["name"])
-        else:
-            logger.warning("Output was not published for %s"%payload["nmo"]["source"]["name"])
-            logger.warning("next plugin: %s"%next_plugin)
-
-    else:
-        logger.warning("There is no next plugin, if this is not a storage plugin you may loose analysis data")
-'''
-def send_to_next_plugin(next_plugin, payload, conn):
+def send_to_next_plugin(next_plugin, payload, conn, out_channel):
     
     if not isinstance(next_plugin, str) and not next_plugin==None:
         raise Exception("Next plugin should be a string if present or None if no next plugin. It is actually %s, %s"%(next_plugin, str(type(next_plugin))))
@@ -573,9 +420,7 @@ def send_to_next_plugin(next_plugin, payload, conn):
         
         
         #use the with argument to avoid creating too many channels and causing a hang
-        with conn.channel() as out_channel:
-            logger.info("CREATE A PUBLISHER")
-            producer = Producer(channel=out_channel)
+        try:
             
             logger.info("SET UP THE QUEUE")
             queue = Queue(name=next_plugin)
@@ -586,16 +431,20 @@ def send_to_next_plugin(next_plugin, payload, conn):
             logger.info("MAKE SURE THE QUEUE EXISTS")
             queue.declare()
             
-            logger.info("Trying to publish result to %s"%next_plugin)
-            logger.info(type(send_payload))
             
-            try:
-                producer.publish(send_payload, exchange='', routing_key=next_plugin, retry=False)
-            except:
-                #if we can't publish we A) need to know why and B) need to kill everything
-                logger.warning(traceback.format_exc())
-                thread.interrupt_main()
-                
+            logger.info("SET UP THE PRODUCER")
+            producer = Producer(out_channel)
+            
+            logger.info("Trying to publish result to %s"%next_plugin)
+            #logger.info(type(send_payload))
+            
+        
+            producer.publish(send_payload, exchange='', routing_key=next_plugin, retry=False)
+        except:
+            #if we can't publish we A) need to know why and B) need to kill everything
+            logger.warning(traceback.format_exc())
+            thread.interrupt_main()
+            
 
         logger.info("Output was published for %s"%payload["nmo"]["source"]["name"])
 
