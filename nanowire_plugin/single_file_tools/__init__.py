@@ -151,8 +151,6 @@ class Worker(ConsumerMixin):
 
 
 
-
-
 #The function that does the hashing
 def hash_func(text):
     
