@@ -421,7 +421,7 @@ def send_to_next_plugin(next_plugin, payload, conn, out_channel):
         
         #use the with argument to avoid creating too many channels and causing a hang
         try:
-            
+                
             logger.info("SET UP THE QUEUE")
             queue = Queue(name=next_plugin)
             
@@ -439,7 +439,7 @@ def send_to_next_plugin(next_plugin, payload, conn, out_channel):
             #logger.info(type(send_payload))
             
         
-            producer.publish(send_payload, exchange='', routing_key=next_plugin, retry=False)
+            producer.publish(send_payload, exchange='', routing_key=next_plugin)
         except:
             #if we can't publish we A) need to know why and B) need to kill everything
             logger.warning(traceback.format_exc())

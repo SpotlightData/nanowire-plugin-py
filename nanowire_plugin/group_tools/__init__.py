@@ -24,16 +24,18 @@ from os import environ
 import inspect
 
 #from ssl import PROTOCOL_TLSv1_2
-import ssl
+#import ssl
+from threading import Thread
 
-from multiprocessing import  Process, Queue
+from kombu.mixins import ConsumerMixin
+from kombu import Connection, Exchange, Queue
 
-import time
+#import time
 import sys
 import pika
 import datetime
 import shutil
-import hashlib
+#import hashlib
 
 from nanowire_plugin import send, set_status, validate_payload
 
@@ -42,6 +44,139 @@ import urllib
 
 #set up the logger globally
 logger = logging.getLogger("nanowire-plugin")
+
+
+
+#This is the worker that does the uploading
+class GroupWorker(ConsumerMixin):
+    def __init__(self, connection, queues, function, name, minio_client, monitor_url, debug_mode):
+        
+        
+        self.name = name
+        self.function = function
+        self.minio_client = minio_client
+        self.monitor_url = monitor_url
+        self.debug_mode = debug_mode
+        self.connect_max_retries=5
+        
+        self.connection = connection
+        self.queues = queues
+        self.q = qq()
+        self.out_channel = self.connection.channel()
+        
+        self.workThread = Thread(target=self.run_tasks)
+        self.workThread.daemon = True
+        self.workThread.start()
+
+    def get_consumers(self, Consumer, channel):
+        return [Consumer(queues=self.queues,
+                         callbacks=[self.on_message],
+                         prefetch_count=1, no_ack=False)]
+
+    def on_message(self, body, message):
+        logger.info("new message to internal queue")
+        self.q.put((body, message))
+
+    def run_tasks(self):
+        while True:
+            try:
+                self.on_task(*self.q.get())
+            except Exception as ex:
+                logging.error(ex)
+
+            except KeyboardInterrupt:
+                break
+
+    def on_task(self, body, message):
+        logger.info("run task")
+        try:
+            data = body.decode("utf-8")
+        except:
+            data = body
+
+        if data == None:
+            
+            logger.info("Empty input")
+            
+        else:
+            #try to load the payload into a dictionary
+            try:
+                payload = json.loads(data)
+                
+                logger.info("PAYLOAD EXTRACTED")
+                #logger.info(str(payload))
+                #logger.info(type(payload))
+            except:
+                if sys.version_info.major == 3:
+                    set_status(self.monitor_url, "Unknown", "Unknown", self.name, error="Message passed to %s is incomplete")
+                else:
+                    set_status(self.monitor_url, u"Unknown", u"Unknown", self.name, error="Message passed to %s is incomplete")
+                #remove the bad file from the queue
+                message.ack()
+                logger.error("The end of the file may have been cut off by rabbitMQ, last 10 characters are: %s"%data[0:10])
+                raise Exception("Problem with payload, payload should be json serializeable. Payload is %s"%data)
+                
+            #check that the payload is valid. If not this function returns the errors that tell the user why it's not
+            #valid
+            validate_payload(payload)
+            
+        
+        result = ''
+        
+        nmo = payload['nmo']
+        
+        tar_url = pull_tarball_url(nmo)
+        
+        if tar_url != None:
+        
+            pull_and_extract_tarball(tar_url, '/cache')
+
+            read_obj = reader()
+            write_obj = writer(nmo)
+            #************** There needs to be some way of getting the url before we hit this
+            
+            try:
+                #result = self.function(nmo, jsonld, url)
+                result = run_group_function(self.function, read_obj, write_obj, nmo)
+                
+            except Exception as exp:
+                if self.debug_mode > 0:
+                    result = traceback.format_exc()
+                    logger.info("THERE WAS A PROBLEM RUNNING THE MAIN FUNCTION: %s"%str(result))
+                else:
+                    result = exp
+                    logger.info("THERE WAS A PROBLEM RUNNING THE MAIN FUNCTION: %s"%str(result))
+            
+        else:
+
+            result = "GROUP TARBALL IS MISSING"
+
+        #send the result to minio and close everything down
+        minio_sender = Minio_tool(self.minio_client)
+
+
+        if result != "GROUP TARBALL IS MISSING":
+
+            try:
+                nmo = minio_sender.send_file("/output/results.json", nmo, self.name)
+                result = {"nmo":nmo}
+                
+            except Exception as exp:
+                logger.info("FAILED TO SEND RESULT: %s"%str(exp))
+                
+                result = exp
+            
+        #send our results to the next plugin in the queue
+        job_stats = send(self.name, payload, result, self.connection, self.out_channel, self.minio_client, self.monitor_url, message, self.debug_mode)
+    
+        if self.debug_mode >= 3:
+            logger.info(job_stats)
+            
+            
+        logger.info("FINISHED RUNNING USER CODE AT %s"%str(datetime.datetime.now()))
+        logger.info("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
+        #message.ack()
+
 
 #check the nmo to see if we're working with groups
 def check_for_group(nmo):
@@ -405,65 +540,8 @@ def group_bind(function, name, version="1.0.0", pulserate=25, debug_mode=0):
     logger.info("initialising nanowire lib")
     
     logger.info("initialising plugin: %s"%name)
-
-    try:
-        if environ["AMQP_SECURE"] == "1":
-            logger.info("Using ssl connection")
-            
-            if str(pika.__version__).split(".")[0] != '1':
-                raise Exception("Pika version %s does not support ssl connections, you must use version 1.0.0 or above"%pika.__version__)
-            
-            context = ssl.SSLContext(ssl.PROTOCOL_TLSv1_2)
-            
-            parameters = pika.ConnectionParameters(
-                host=environ["AMQP_HOST"],
-                port=int(environ["AMQP_PORT"]),
-                credentials=pika.PlainCredentials(environ["AMQP_USER"], environ["AMQP_PASS"]),
-                heartbeat=pulserate,
-                socket_timeout=10,
-                connection_attempts=1,
-                retry_delay = 5,
-                blocked_connection_timeout=120,
-                ssl = pika.SSLOptions(context))
-            
-        else:
-            logger.info("Not using ssl")
-            #set the parameters for pika
-            parameters = pika.ConnectionParameters(
-                host=environ["AMQP_HOST"],
-                port=int(environ["AMQP_PORT"]),
-                credentials=pika.PlainCredentials(environ["AMQP_USER"], environ["AMQP_PASS"]),
-                heartbeat=pulserate,
-                socket_timeout=10,
-                connection_attempts=1,
-                retry_delay = 5,
-                blocked_connection_timeout=120)
-                
-    except:
     
-        logger.info("Not using ssl")
-        #set the parameters for pika
-        parameters = pika.ConnectionParameters(
-            host=environ["AMQP_HOST"],
-            port=int(environ["AMQP_PORT"]),
-            credentials=pika.PlainCredentials(environ["AMQP_USER"], environ["AMQP_PASS"]),
-            heartbeat=pulserate,
-            socket_timeout=10,
-            connection_attempts=1,
-            retry_delay = 5,
-            blocked_connection_timeout=120)
-
-    #set up pika connection channels between rabbitmq and python
-    connection = pika.BlockingConnection(parameters)
     
-    #add something to stop the connection hanging when it's supposed to be grabbing. This does not work
-    input_channel = connection.channel()
-    output_channel = connection.channel()
-    
-    #The confirm delivery on the output channel is nessesary to stop pika cutting the ends off of messages
-    input_channel.confirm_delivery()
-    output_channel.confirm_delivery()
-
     #set up the minio client
     minio_client = Minio(
         environ["MINIO_HOST"] + ":" + environ["MINIO_PORT"],
@@ -475,43 +553,46 @@ def group_bind(function, name, version="1.0.0", pulserate=25, debug_mode=0):
 
     monitor_url = environ["MONITOR_URL"]
 
-    logger.info("initialised nanowire lib", extra={
-        "monitor_url": monitor_url,
-        "minio": environ["MINIO_HOST"],
-        "rabbit": environ["AMQP_HOST"]
-    })
+
+    if environ.get("AMQP_SECURE") != None:
+        if environ["AMQP_SECURE"] == "1":
+            logger.info("Using ssl connection")
+            
+            rabbit_url = "amqp://%s:%s@%s:%s/"%(environ["AMQP_USER"], environ["AMQP_PASS"], environ["AMQP_HOST"], environ["AMQP_PORT"])
+            
+            queues = [Queue(name)]
+            with Connection(rabbit_url, heartbeat=25, ssl=True) as conn:
+                worker = GroupWorker(conn, queues, function, name, minio_client, monitor_url, debug_mode)
+                logger.info("Starting consuming")
+                worker.run()
+                
+        else:
+            logger.info("Not ssl connection as per instruction")
+            
+            rabbit_url = "amqp://%s:%s@%s:%s/"%(environ["AMQP_USER"], environ["AMQP_PASS"], environ["AMQP_HOST"], environ["AMQP_PORT"])
+            
+            queues = [Queue(name)]
+            with Connection(rabbit_url, heartbeat=25) as conn:
+                worker = GroupWorker(conn, queues, function, name, minio_client, monitor_url, debug_mode)
+                logger.info("Starting consuming")
+                worker.run()
+                
+    else:
     
-    logger.info("monitor_url: %s"%monitor_url)
-    logger.info("minio: %s"%environ["MINIO_HOST"])
-    logger.info("rabbit: %s"%environ["AMQP_HOST"])
+        logger.info("Not ssl connection, no instruction")
+            
+        rabbit_url = "amqp://%s:%s@%s:%s/"%(environ["AMQP_USER"], environ["AMQP_PASS"], environ["AMQP_HOST"], environ["AMQP_PORT"])
+        
+        queues = [Queue(name)]
+        with Connection(rabbit_url, heartbeat=25) as conn:
+            worker = GroupWorker(conn, queues, function, name, minio_client, monitor_url, debug_mode)
+            logger.info("Starting consuming")
+            worker.run()
+            
+    logger.info("Passed consumer, something is very wrong...")
 
 
-    logger.info("consuming from %s"%name)
-
-    input_queue = input_channel.queue_declare(name, durable=True)
-    
-    #all the stuff that needs to be passed into the callback function is stored
-    #in this object so that it can be easily passed through
-    group_requester = group_on_request_class(connection, function, name, minio_client, output_channel, monitor_url, debug_mode)
-    
-    #set the queue length to one
-    input_channel.basic_qos(prefetch_count=1)
-    
-    #set up the function for running the users code on the input message
-    input_channel.basic_consume(name, group_requester.on_request, auto_ack=False)
-    
-    #print("Created basic consumer")
-    logger.info("Created basic consumer")
-    #print("ENTERING THE FUNCTION")
-    
-    #start the countdown to make sure the first consume does not hang        
-    input_channel.start_consuming()
-    
-    logger.info("Past start consuming, not sure whats going on...")
-
-
-
-
+'''
 #create a class so we can feed things into the on_request function
 class group_on_request_class():
     
@@ -708,8 +789,14 @@ class group_on_request_class():
         #put our result onto the queue so that it can be sent through the system
         #logger.info("Putting result on thread %s"%json.dumps(result))
         self.process_queue.put_nowait(result)
-        
-        
+'''
+
+
+
+
+
+
+
 def validate_group_function(function):
     
     if sys.version_info.major == 3:

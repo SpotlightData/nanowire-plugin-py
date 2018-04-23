@@ -23,14 +23,13 @@ except ImportError:
     from queue import Queue as qq
 
 
-import ssl
+
 from threading import Thread
 #import threading
-from multiprocessing import  Process, Queue
 from kombu.mixins import ConsumerMixin
-from kombu import Connection, Exchange, Queue
+#from kombu import Connection, Exchange, Queue
+from kombu import Connection, Queue
 
-import time
 import sys
 import pika
 import hashlib
@@ -59,7 +58,7 @@ class Worker(ConsumerMixin):
         self.minio_client = minio_client
         self.monitor_url = monitor_url
         self.debug_mode = debug_mode
-        
+        self.connect_max_retries=5
         
         self.connection = connection
         self.queues = queues
@@ -109,7 +108,6 @@ class Worker(ConsumerMixin):
                 #logger.info(str(payload))
                 #logger.info(type(payload))
             except:
-                
                 if sys.version_info.major == 3:
                     set_status(self.monitor_url, "Unknown", "Unknown", self.name, error="Message passed to %s is incomplete")
                 else:
@@ -144,6 +142,11 @@ class Worker(ConsumerMixin):
         
         job_stats = send(self.name, payload, result, self.connection, self.out_channel, self.minio_client, self.monitor_url, message, self.debug_mode)
 
+        if self.debug_mode >=3:
+            logger.info(str(job_stats))
+
+        logger.info("FINISHED RUNNING USER CODE AT %s"%str(datetime.datetime.now()))
+        logger.info("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
         #message.ack()
 
 
@@ -230,7 +233,7 @@ def bind(function, name, version="1.0.0", pulserate=25, debug_mode=0, set_timeou
 
     #this is only commented out since I'm trying to find the source of these terrible errors
     
-    try:
+    if environ.get("AMQP_SECURE") != None:
         if environ["AMQP_SECURE"] == "1":
             logger.info("Using ssl connection")
 
@@ -253,8 +256,7 @@ def bind(function, name, version="1.0.0", pulserate=25, debug_mode=0, set_timeou
             with Connection(rabbit_url, heartbeat=25) as conn:
                 worker = Worker(conn, queues, function, name, minio_client, monitor_url, debug_mode)
                 worker.run()
-    except:
-    
+    else:
         logger.info("Not using ssl")
         #set the parameters for pika
 
