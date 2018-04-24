@@ -31,7 +31,7 @@ from kombu.mixins import ConsumerMixin
 from kombu import Connection, Queue
 
 import sys
-import pika
+#import pika
 import hashlib
 import datetime
 

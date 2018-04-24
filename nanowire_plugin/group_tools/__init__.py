@@ -27,12 +27,17 @@ import inspect
 #import ssl
 from threading import Thread
 
+try:
+    from Queue import Queue as qq
+except ImportError:
+    from queue import Queue as qq
+import kombu
 from kombu.mixins import ConsumerMixin
-from kombu import Connection, Exchange, Queue
+from kombu import Connection, Exchange, Queue, pools
 
 #import time
 import sys
-import pika
+#import pika
 import datetime
 import shutil
 #import hashlib
@@ -67,6 +72,8 @@ class GroupWorker(ConsumerMixin):
         self.workThread = Thread(target=self.run_tasks)
         self.workThread.daemon = True
         self.workThread.start()
+        
+        
 
     def get_consumers(self, Consumer, channel):
         return [Consumer(queues=self.queues,
@@ -127,25 +134,37 @@ class GroupWorker(ConsumerMixin):
         
         tar_url = pull_tarball_url(nmo)
         
-        if tar_url != None:
         
-            pull_and_extract_tarball(tar_url, '/cache')
-
-            read_obj = reader()
-            write_obj = writer(nmo)
-            #************** There needs to be some way of getting the url before we hit this
-            
+        found_tarball = True
+        
+        if tar_url != None:
             try:
-                #result = self.function(nmo, jsonld, url)
-                result = run_group_function(self.function, read_obj, write_obj, nmo)
-                
+                pull_and_extract_tarball(tar_url, '/cache')
             except Exception as exp:
-                if self.debug_mode > 0:
-                    result = traceback.format_exc()
-                    logger.info("THERE WAS A PROBLEM RUNNING THE MAIN FUNCTION: %s"%str(result))
-                else:
-                    result = exp
-                    logger.info("THERE WAS A PROBLEM RUNNING THE MAIN FUNCTION: %s"%str(result))
+                
+                if "COULD NOT FIND TARBALL AT" in str(exp):
+                    found_tarball = False                    
+
+
+            if found_tarball:
+                read_obj = reader()
+                write_obj = writer(nmo)
+                #************** There needs to be some way of getting the url before we hit this
+                
+                try:
+                    #result = self.function(nmo, jsonld, url)
+                    result = run_group_function(self.function, read_obj, write_obj, nmo)
+                    
+                except Exception as exp:
+                    if self.debug_mode > 0:
+                        result = str(traceback.format_exc())
+                        logger.info("THERE WAS A PROBLEM RUNNING THE MAIN FUNCTION: %s"%str(result))
+                    else:
+                        result = str(exp)
+                        logger.info("THERE WAS A PROBLEM RUNNING THE MAIN FUNCTION: %s"%str(result))
+                        
+            else:
+                result = "GROUP TARBALL IS MISSING"
             
         else:
 
@@ -155,7 +174,7 @@ class GroupWorker(ConsumerMixin):
         minio_sender = Minio_tool(self.minio_client)
 
 
-        if result != "GROUP TARBALL IS MISSING":
+        if not isinstance(result, str):
 
             try:
                 nmo = minio_sender.send_file("/output/results.json", nmo, self.name)
@@ -164,9 +183,10 @@ class GroupWorker(ConsumerMixin):
             except Exception as exp:
                 logger.info("FAILED TO SEND RESULT: %s"%str(exp))
                 
-                result = exp
+                result = str(exp)
             
         #send our results to the next plugin in the queue
+            
         job_stats = send(self.name, payload, result, self.connection, self.out_channel, self.minio_client, self.monitor_url, message, self.debug_mode)
     
         if self.debug_mode >= 3:
@@ -533,7 +553,9 @@ def group_bind(function, name, version="1.0.0", pulserate=25, debug_mode=0):
     #set up the logging
     logger.setLevel(logging.DEBUG)
     
-    logger.info("Running with pika version %s"%str(pika.__version__))
+    #pools.set_limit(None)
+    
+    logger.info("Running with kombu version %s"%str(kombu.__version__))
 
     #write to screen to ensure logging is working ok
     #print "Initialising nanowire lib, this is a print"
@@ -560,6 +582,9 @@ def group_bind(function, name, version="1.0.0", pulserate=25, debug_mode=0):
             
             rabbit_url = "amqp://%s:%s@%s:%s/"%(environ["AMQP_USER"], environ["AMQP_PASS"], environ["AMQP_HOST"], environ["AMQP_PORT"])
             
+            if debug_mode > 2:
+                logger.info("rabbit url:- %s"%rabbit_url)
+                
             queues = [Queue(name)]
             with Connection(rabbit_url, heartbeat=25, ssl=True) as conn:
                 worker = GroupWorker(conn, queues, function, name, minio_client, monitor_url, debug_mode)
@@ -570,6 +595,9 @@ def group_bind(function, name, version="1.0.0", pulserate=25, debug_mode=0):
             logger.info("Not ssl connection as per instruction")
             
             rabbit_url = "amqp://%s:%s@%s:%s/"%(environ["AMQP_USER"], environ["AMQP_PASS"], environ["AMQP_HOST"], environ["AMQP_PORT"])
+            
+            if debug_mode > 2:
+                logger.info("rabbit url:- %s"%rabbit_url)            
             
             queues = [Queue(name)]
             with Connection(rabbit_url, heartbeat=25) as conn:
@@ -583,6 +611,9 @@ def group_bind(function, name, version="1.0.0", pulserate=25, debug_mode=0):
             
         rabbit_url = "amqp://%s:%s@%s:%s/"%(environ["AMQP_USER"], environ["AMQP_PASS"], environ["AMQP_HOST"], environ["AMQP_PORT"])
         
+        if debug_mode > 2:
+            logger.info("rabbit url:- %s"%rabbit_url)        
+        
         queues = [Queue(name)]
         with Connection(rabbit_url, heartbeat=25) as conn:
             worker = GroupWorker(conn, queues, function, name, minio_client, monitor_url, debug_mode)
@@ -590,210 +621,6 @@ def group_bind(function, name, version="1.0.0", pulserate=25, debug_mode=0):
             worker.run()
             
     logger.info("Passed consumer, something is very wrong...")
-
-
-'''
-#create a class so we can feed things into the on_request function
-class group_on_request_class():
-    
-    def __init__(self, connection, function, name, minio_client, output_channel, monitor_url, debug_setting):
-        
-        #check to see if the input function has the correct number of arguments. This changes depending on whether we're working
-        #in python2 or python3 because apparantly unit testing is super important and my time isn't
-
-        #check the function we're going to work with            
-        validate_group_function(function)            
-            
-        #setting up the class type checking
-        if not isinstance(name, str):
-            raise Exception("plugin name should be a string, it is actually %s"%name)
-            
-        #setting up the class type checking
-        if not isinstance(monitor_url, str):
-            raise Exception("monitor_url should be a string, it is actually %s"%monitor_url)
-        
-        if not str(type(output_channel)) == "<class 'pika.adapters.blocking_connection.BlockingChannel'>" and "mock" not in str(output_channel).lower():
-            raise Exception("output channel should be a pika blocking connection channel it is actually %s"%output_channel)
-        
-        if not output_channel.is_open:
-            raise Exception("Output channel is closed")
-       
-        self.name = name
-        self.connection = connection
-        self.function = function
-        self.minio_client = minio_client
-        self.monitor_url = monitor_url
-        self.output_channel = output_channel
-        self.debug_mode = debug_setting
-
-        self.process_queue = Queue()
-
-    def on_request(self, ch, method, props, body):
-
-        #check the channel is open
-        if not ch.is_open:
-            raise Exception("Input channel is closed")
-
-        #check the body is a byte string
-        if not isinstance(body, bytes):
-            raise Exception("The body data should be a byte stream, it is actually %s, %s"%(body, type(body)))
-
-        #set up logging inside the server functions
-        logger.setLevel(logging.DEBUG)
-        
-        data = body.decode("utf-8")
-
-        if data == None:
-            
-            logger.info("Empty input")
-            
-        else:
-
-            #try to load the payload into a dictionary
-            try:
-                self.payload = json.loads(data)
-            except:
-                if sys.version_info.major == 2:
-                    set_status(self.monitor_url, u"Unknown", u"Unknown", self.name, error="Message passed to %s is incomplete")
-                else:
-                    set_status(self.monitor_url, "Unknown", "Unknown", self.name, error="Message passed to %s is incomplete")
-                #remove the bad file from the queue
-                ch.basic_ack(method.delivery_tag)
-                logger.error("The end of the file may have been cut off by rabbitMQ, last 10 characters are: %s"%data[0:10])
-                raise Exception("Problem with payload, payload should be json serializeable. Payload is %s"%data)
-                
-            #check that the payload is valid. If not this function returns the errors that tell the user why it's not
-            #valid
-            validate_payload(self.payload)
-            
-
-        #handle the function call here!!!
-        #proc_thread = threading.Thread(target=self.run_processing_thread)
-        #proc_thread.setDaemon(True)
-        #proc_thread.start()
-        
-        p = Process(target=self.run_processing_thread, args=())
-        p.start()        
-        
-        
-        processing = True
-        
-        pacemaker_pluserate = 10        
-        
-        #set up t=0 for the heartbeats
-        beat_time = time.time()
-        
-        #wait here for the process to finish
-        while processing:
-            
-            time_since_last_heartbeat = time.time() - beat_time
-            #perform the heartbeat every n seconds
-            if time_since_last_heartbeat >= pacemaker_pluserate:
-                self.connection.process_data_events()
-                
-                #reset the timer on the pacemaker
-                beat_time = time.time()
-                time_since_last_heartbeat = 0
-            
-            messages = self.process_queue.qsize()
-            
-            if not self.process_queue.empty():
-            
-                if messages == 1:
-                    try:
-                        output = self.process_queue.get_nowait()
-                        processing = False
-                    except:
-                        logger.warning(self.process_queue.qsize())
-                        logger.warning("=========================")
-                        logger.warning(traceback.format_exc())
-                        #'Result did not get put onto the processing queue'
-                    
-                elif messages > 1:
-                    raise Exception("Something has gone wrong, there are multiple messages on the queue: %s"%str(self.process_queue.queue))
-        
-        #logger.info(json.dumps(self.payload))
-        
-        #run the send command with a 2 minute timeout
-        send(self.name, self.payload, output, ch, self.output_channel, method, self.minio_client, self.monitor_url, self.debug_mode)
-        #returned = send(self.name, payload, ch, self.output_channel, method, props, self.minio_client, self.monitor_url, self.function)
-        
-
-        logger.info("Finished running user code at %s"%str(datetime.datetime.now()))
-        logger.info("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
-
-
-    def run_processing_thread(self):
-        
-        logger.info("RUNNING GROUP PROCESSING THREAD")
-        result = ''
-        #logger.info("IN PAYLOAD IS:-")
-        #logger.info(json.dumps(self.payload))
-        #logger.info("++++++++++++++++++++++++++++++++++++++++++++++++++++++")
-        
-        nmo = self.payload['nmo']
-        #pull the url from minio
-        #************** There needs to be some way of getting the url before we hit this
-        
-        tar_url = pull_tarball_url(nmo)
-        
-        #logger.info("FOUND TARBALL URL:- %s"%tar_url)        
-        
-        if tar_url != None:
-        
-            pull_and_extract_tarball(tar_url, '/cache')
-
-            read_tool = reader()
-
-            write_tool = writer(nmo)
-            
-            #logger.info("CREATED THE REQUIRED INFASTRUCTURE")
-            #logger.info(os.listdir("/cache"))
-            #logger.info(os.listdir("/cache/jsonlds"))
-            #logger.info(os.listdir("/output"))
-            
-            try:
-                logger.info("STARTING THE MAIN FUNCTION")
-                nmo = run_group_function(self.function , read_tool, write_tool, nmo)
-                
-                
-                
-            except Exception as exp:
-                if self.debug_mode > 0:
-                    result = traceback.format_exc()
-                    logger.info("THERE WAS A PROBLEM RUNNING THE MAIN FUNCTION: %s"%str(result))
-                else:
-                    result = exp
-                
-        else:
-            result = "GROUP TARBALL IS MISSING"
-
-        #send the result to minio and close everything down
-        minio_sender = Minio_tool(self.minio_client)
-        
-        
-        if result != "GROUP TARBALL IS MISSING":
-            try:
-                nmo = minio_sender.send_file('/output/results.json', nmo, self.name)
-                result = {'nmo':nmo}
-
-                
-            except Exception as exp:
-                logger.info("FAILED TO SEND RESULT: %s"%str(exp))
-                result = exp
-            
-        #logger.info("RETURNED PAYLOAD:-")
-        #logger.info(json.dumps(result))
-        #logger.info("************************************")
-        
-        #put our result onto the queue so that it can be sent through the system
-        #logger.info("Putting result on thread %s"%json.dumps(result))
-        self.process_queue.put_nowait(result)
-'''
-
-
-
-
 
 
 

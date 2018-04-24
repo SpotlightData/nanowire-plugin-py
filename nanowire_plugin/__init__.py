@@ -9,7 +9,7 @@ Created on Wed Oct 25 11:30:46 2017
 """
 Provides a `bind` function to plugins so they can simply bind a function to a queue.
 """
-from kombu import Connection, Exchange, Queue, Producer
+from kombu import Connection, Exchange, Queue, Producer, pools
 from kombu.mixins import ConsumerMixin
 import traceback
 import logging
@@ -25,7 +25,7 @@ from minio import Minio
 
 import time
 import sys
-import pika
+#import pika
 
 #import the relavant version of urllib depending on the version of python we are
 if sys.version_info.major == 3:
@@ -256,10 +256,16 @@ def send(name, payload, output, connection, out_channel, minio_client, monitor_u
     # in EXACTLY the right format
     
     out_jsonld = clean_function_output(output, payload)
+    
+    #logger.info("Out json is")
+    #logger.info(out_jsonld)
+    #logger.info("======================")
        
     try:
         group = payload['nmo']['source']['misc']['isGroup']
+        #logger.info("Its a group plugin")
     except:
+        #logger.info("Its not a group plugin")
         group = False
         
     if not group:
@@ -275,6 +281,7 @@ def send(name, payload, output, connection, out_channel, minio_client, monitor_u
         
             if payload['nmo'] != output['nmo']:
                 
+                logger.info("mutating nmo")
                 payload['nmo'] = output['nmo']
 
     logger.info("finished running user code on %s at %s"%(payload["nmo"]["source"]["name"], str(datetime.datetime.now())))
@@ -284,11 +291,11 @@ def send(name, payload, output, connection, out_channel, minio_client, monitor_u
         logger.warning(json.dumps(payload))
     
     #send the info from this plugin to the next one in the pipeline
-    send_to_next_plugin(next_plugin, payload, connection, out_channel)
+    send_to_next_plugin(next_plugin, payload, connection, out_channel, message)
     
     #Let the frontend know that we're done
     #input_channel.basic_ack(method.delivery_tag)
-    message.ack()
+    
 
     return {
         "job_id": payload["nmo"]["job"]["job_id"],
@@ -387,7 +394,7 @@ def inform_monitor(payload, name, monitor_url, minio_client):
     return next_plugin
    
 
-def send_to_next_plugin(next_plugin, payload, conn, out_channel):
+def send_to_next_plugin(next_plugin, payload, conn, out_channel, message):
     
     if not isinstance(next_plugin, str) and not next_plugin==None:
         raise Exception("Next plugin should be a string if present or None if no next plugin. It is actually %s, %s"%(next_plugin, str(type(next_plugin))))
@@ -399,37 +406,28 @@ def send_to_next_plugin(next_plugin, payload, conn, out_channel):
         raise Exception("nmo is critical to payload however is missing, payload is currently %s"%payload)
     logger.info("RUNNING SEND TO NEXT PLUGIN")
     if next_plugin != None:
-        '''
-        #set up a producer to send the message forwards to the next plugin
-        producer = connection.Producer()
-        
-        producer.publish(payload, 
-                         retry=True,
-                         exchange='',
-                         declare)
-        '''
         
         logger.info("CREATING PAYLOAD STRING")
         send_payload = json.dumps(payload)
         
-        
         logger.info("CREATE A CHANNEL TO SEND THE DATA THROUGH")
-        
         
         #set up the producer to send messages to the next plugin
         
-        
         #use the with argument to avoid creating too many channels and causing a hang
         try:
+            
+            #logger.info("CONNECTED?")
+            #logger.info(str(conn.connected))
                 
-            logger.info("SET UP THE QUEUE")
-            queue = Queue(name=next_plugin)
+            #logger.info("SET UP THE QUEUE")
+            #queue = Queue(name=next_plugin)
             
-            logger.info("BIND TO THE QUEUE")
-            queue.maybe_bind(conn)
+            #logger.info("BIND TO THE QUEUE")
+            #queue.maybe_bind(conn)
             
-            logger.info("MAKE SURE THE QUEUE EXISTS")
-            queue.declare()
+            #logger.info("MAKE SURE THE QUEUE EXISTS")
+            #queue.declare()
             
             
             logger.info("SET UP THE PRODUCER")
@@ -437,26 +435,27 @@ def send_to_next_plugin(next_plugin, payload, conn, out_channel):
             
             logger.info("Trying to publish result to %s"%next_plugin)
             #logger.info(type(send_payload))
+            producer.publish(send_payload, exchange='', routing_key=next_plugin, retry=True, 
+                             retry_policy={'interval_start':1,
+                                           'interval_step':1,
+                                           'interval_max':10,
+                                           'max_retries':5})
             
-        
-            producer.publish(send_payload, exchange='', routing_key=next_plugin)
+            logger.info("Output was published for %s"%payload["nmo"]["source"]["name"])
+            
+            #logger.info("Acking message")
+            message.ack()            
+
         except:
             #if we can't publish we A) need to know why and B) need to kill everything
             logger.warning(traceback.format_exc())
+            logger.warning("==================================")
+            logger.warning(send_payload)
+            #logger.warning("$$$$$$$$$$$$$$$$$$$$$")
+            #logger.warning(str(type(send_payload)))
+            #logger.warning("------------------------------------------------------")
             thread.interrupt_main()
             
-
-        logger.info("Output was published for %s"%payload["nmo"]["source"]["name"])
-
-
-        '''
-        #if the result sent ok then log that everything should be fine
-        if send_result:
-                logger.info("Output was published for %s"%payload["nmo"]["source"]["name"])
-        else:
-            logger.warning("Output was not published for %s"%payload["nmo"]["source"]["name"])
-            logger.warning("next plugin: %s"%next_plugin)
-        '''
     else:
         logger.warning("There is no next plugin, if this is not a storage plugin you may loose analysis data")
 
@@ -499,6 +498,9 @@ def clean_function_output(result, payload):
         #the result is not a dictionary, nor is the payload. Something has gone very wrong but we can still return a None
         else:
             result = None
+            
+    else:
+        result = None
         
     #check to see that result is not an empty field. If result is None everything
     #goes wrong
@@ -517,5 +519,10 @@ def clean_function_output(result, payload):
     if result != None:
         return result
     else:
-        return payload["jsonld"]
+        logger.info("returning initial payload")
+        
+        if 'jsonld' in payload.keys():
+            return payload["jsonld"]
+        else:
+            return None
 
