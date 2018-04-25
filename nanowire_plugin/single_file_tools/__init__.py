@@ -135,11 +135,11 @@ class Worker(ConsumerMixin):
             
         except Exception as exp:
             if self.debug_mode > 0:
-                result = traceback.format_exc()
-                logger.info("THERE WAS A PROBLEM RUNNING THE MAIN FUNCTION: %s"%str(result))
+                result = str(traceback.format_exc())
+                logger.info("THERE WAS A PROBLEM RUNNING THE MAIN FUNCTION: %s"%result)
             else:
-                result = exp
-                logger.info("THERE WAS A PROBLEM RUNNING THE MAIN FUNCTION: %s"%str(result))
+                result = str(exp)
+                logger.info("THERE WAS A PROBLEM RUNNING THE MAIN FUNCTION: %s"%result)
         
         job_stats = send(self.name, payload, result, self.connection, self.out_channel, self.minio_client, self.monitor_url, message, self.debug_mode)
 
