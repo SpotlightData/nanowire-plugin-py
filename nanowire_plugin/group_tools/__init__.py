@@ -33,11 +33,11 @@ except ImportError:
     from queue import Queue as qq
 import kombu
 from kombu.mixins import ConsumerMixin
-from kombu import Connection, Exchange, Queue, pools
+#from kombu import Connection, Exchange, Queue, pools
+from kombu import Connection, Queue
 
 #import time
 import sys
-#import pika
 import datetime
 import shutil
 #import hashlib
@@ -586,7 +586,7 @@ def group_bind(function, name, version="1.0.0", pulserate=25, debug_mode=0):
                 logger.info("rabbit url:- %s"%rabbit_url)
                 
             queues = [Queue(name)]
-            with Connection(rabbit_url, heartbeat=25, ssl=True) as conn:
+            with Connection(rabbit_url, heartbeat=25, ssl=True, transport_options={'confirm_publish':True}) as conn:
                 worker = GroupWorker(conn, queues, function, name, minio_client, monitor_url, debug_mode)
                 logger.info("Starting consuming")
                 worker.run()
@@ -600,7 +600,7 @@ def group_bind(function, name, version="1.0.0", pulserate=25, debug_mode=0):
                 logger.info("rabbit url:- %s"%rabbit_url)            
             
             queues = [Queue(name)]
-            with Connection(rabbit_url, heartbeat=25) as conn:
+            with Connection(rabbit_url, heartbeat=25, transport_options={'confirm_publish':True}) as conn:
                 worker = GroupWorker(conn, queues, function, name, minio_client, monitor_url, debug_mode)
                 logger.info("Starting consuming")
                 worker.run()
@@ -615,7 +615,7 @@ def group_bind(function, name, version="1.0.0", pulserate=25, debug_mode=0):
             logger.info("rabbit url:- %s"%rabbit_url)        
         
         queues = [Queue(name)]
-        with Connection(rabbit_url, heartbeat=25) as conn:
+        with Connection(rabbit_url, heartbeat=25, transport_options={'confirm_publish':True}) as conn:
             worker = GroupWorker(conn, queues, function, name, minio_client, monitor_url, debug_mode)
             logger.info("Starting consuming")
             worker.run()

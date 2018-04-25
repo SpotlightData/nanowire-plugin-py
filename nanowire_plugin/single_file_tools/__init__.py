@@ -15,6 +15,8 @@ import json
 from os import environ
 import inspect
 
+import kombu
+
 #from ssl import PROTOCOL_TLSv1_2
 
 try:
@@ -31,7 +33,6 @@ from kombu.mixins import ConsumerMixin
 from kombu import Connection, Queue
 
 import sys
-#import pika
 import hashlib
 import datetime
 
@@ -75,7 +76,7 @@ class Worker(ConsumerMixin):
                          prefetch_count=1, no_ack=False)]
 
     def on_message(self, body, message):
-        logger.info("new message to internal queue")
+        #logger.info("new message to internal queue")
         self.q.put((body, message))
 
     def run_tasks(self):
@@ -89,7 +90,7 @@ class Worker(ConsumerMixin):
                 break
 
     def on_task(self, body, message):
-        logger.info("run task")
+        #logger.info("run task")
         try:
             data = body.decode("utf-8")
         except:
@@ -186,7 +187,7 @@ def bind(function, name, version="1.0.0", pulserate=25, debug_mode=0, set_timeou
     
     if debug_mode > 0:
         
-        logger.info("Running with pika version %s"%str(pika.__version__))
+        logger.info("Running with kombu version %s"%str(kombu.__version__))
     
         #write to screen to ensure logging is working ok
         #print "Initialising nanowire lib, this is a print"
@@ -238,32 +239,30 @@ def bind(function, name, version="1.0.0", pulserate=25, debug_mode=0, set_timeou
             rabbit_url = "amqp://%s:%s@%s:%s/"%(environ["AMQP_USER"], environ["AMQP_PASS"], environ["AMQP_HOST"], environ["AMQP_PORT"])
             
             queues = [Queue(name)]
-            with Connection(rabbit_url, heartbeat=25, ssl=True) as conn:
+            with Connection(rabbit_url, heartbeat=25, ssl=True, transport_options={'confirm_publish':True}) as conn:
                 worker = Worker(conn, queues, function, name, minio_client, monitor_url, debug_mode)
                 worker.run()
             
         else:
             logger.info("Not using ssl")
-            #set the parameters for pika
             #initialise the celery worker
             rabbit_url = "amqp://%s:%s@%s:%s/"%(environ["AMQP_USER"], environ["AMQP_PASS"], environ["AMQP_HOST"], environ["AMQP_PORT"])
             
             #set up celery connection
             #set up celery connection
             queues = [Queue(name)]
-            with Connection(rabbit_url, heartbeat=25) as conn:
+            with Connection(rabbit_url, heartbeat=25, transport_options={'confirm_publish':True}) as conn:
                 worker = Worker(conn, queues, function, name, minio_client, monitor_url, debug_mode)
                 worker.run()
     else:
         logger.info("Not using ssl")
-        #set the parameters for pika
 
         #initialise the celery worker
         rabbit_url = "amqp://%s:%s@%s:%s/"%(environ["AMQP_USER"], environ["AMQP_PASS"], environ["AMQP_HOST"], environ["AMQP_PORT"])
         
         #set up celery connection
         queues = [Queue(name)]
-        with Connection(rabbit_url, heartbeat=25) as conn:
+        with Connection(rabbit_url, heartbeat=25, transport_options={'confirm_publish':True}) as conn:
             worker = Worker(conn, queues, function, name, minio_client, monitor_url, debug_mode)
             worker.run()
         

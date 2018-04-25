@@ -9,8 +9,9 @@ Created on Wed Oct 25 11:30:46 2017
 """
 Provides a `bind` function to plugins so they can simply bind a function to a queue.
 """
-from kombu import Connection, Exchange, Queue, Producer, pools
-from kombu.mixins import ConsumerMixin
+#from kombu import Connection, Exchange, Queue, Producer, pools
+from kombu import Producer
+#from kombu.mixins import ConsumerMixin
 import traceback
 import logging
 import json
@@ -21,11 +22,10 @@ import datetime
 
 #from ssl import PROTOCOL_TLSv1_2
 
-from minio import Minio
+#from minio import Minio
 
 import time
 import sys
-#import pika
 
 #import the relavant version of urllib depending on the version of python we are
 if sys.version_info.major == 3:
@@ -41,7 +41,7 @@ try:
 except ImportError:
     from queue import Queue as qq
 
-from threading import Thread
+#from threading import Thread
 
 try:
     import thread
@@ -49,7 +49,7 @@ except:
     import _thread as thread
 
 
-import hashlib
+#import hashlib
 
 #set up the logger globally
 logger = logging.getLogger("nanowire-plugin")
@@ -100,7 +100,7 @@ def get_this_plugin(this_plugin, workflow):
         raise Exception("Workflow is empty, something is wrong")
     
     
-    logger.info("this_plugin: %s"%this_plugin)
+    #logger.info("this_plugin: %s"%this_plugin)
     
     for i, workpipe in enumerate(workflow):
         if workpipe["config"]["name"] == this_plugin:
@@ -222,7 +222,7 @@ def send(name, payload, output, connection, out_channel, minio_client, monitor_u
     #log some info about what the send function has been given
     logger.info("LETTING MONITOR KNOW PROCESSING HAS BEEN DONE")
     
-    next_plugin = inform_monitor(payload, name, monitor_url, minio_client)
+    next_plugin = inform_monitor(payload, name, monitor_url, minio_client, debug_mode)
 
 
     #python2 has a nasty habit of converting things to unicode so this forces that behaviour out
@@ -291,10 +291,24 @@ def send(name, payload, output, connection, out_channel, minio_client, monitor_u
         logger.warning(json.dumps(payload))
     
     #send the info from this plugin to the next one in the pipeline
-    send_to_next_plugin(next_plugin, payload, connection, out_channel, message)
+    sent_success = send_to_next_plugin(next_plugin, payload, connection, out_channel, message)
     
-    #Let the frontend know that we're done
-    #input_channel.basic_ack(method.delivery_tag)
+    
+    if sent_success:
+        #set status afer we've sent the message in case the publisher gets disconnected
+        try:
+            set_status(monitor_url,
+                       payload["nmo"]["job"]["job_id"],
+                       payload["nmo"]["task"]["task_id"],
+                       name, error=err)
+        except Exception as exp:
+            logger.warning("failed to set status")
+            logger.warning("exception: %s"%str(exp))
+            logger.warning("job_id: %s"%payload["nmo"]["job"]["job_id"])
+            logger.warning("task_id: %s"%payload["nmo"]["task"]["task_id"])
+        
+        #Let the frontend know that we're done
+        #input_channel.basic_ack(method.delivery_tag)
     
 
     return {
@@ -322,12 +336,12 @@ def get_url(payload, minio_cl):
     except:
         result = traceback.format_exc()
         
-        logger.warning("FALIED TO GET URL DUE TO: %s"%str(result))
+        logger.warning("FAILED TO GET URL DUE TO: %s"%str(result))
         url = None
     
     return url
 
-def inform_monitor(payload, name, monitor_url, minio_client):
+def inform_monitor(payload, name, monitor_url, minio_client, debug_mode):
     
     if not isinstance(payload, dict):
         raise Exception("Payload should be a dictionary, it is actually: %s"%payload)
@@ -365,10 +379,11 @@ def inform_monitor(payload, name, monitor_url, minio_client):
             "declared plugin name does not match workflow \njob_id: %s\ntask_id: %s"%(
             payload["nmo"]["job"]["job_id"],
             payload["nmo"]["task"]["task_id"]))
-    logger.info("Plugin number %s in pipeline"%plugin_no)
     
-    logger.info("monitor url is: %s"%monitor_url)
-    logger.info("filename is %s"%payload["nmo"]["source"]["name"])    
+    if debug_mode >= 1:    
+        logger.info("Plugin number %s in pipeline"%plugin_no)
+        logger.info("monitor url is: %s"%monitor_url)
+        logger.info("filename is %s"%payload["nmo"]["source"]["name"])    
     #Inform the monitor as to where we are. If we can't then list a series of
     #warnings
     
@@ -413,7 +428,7 @@ def send_to_next_plugin(next_plugin, payload, conn, out_channel, message):
         logger.info("CREATE A CHANNEL TO SEND THE DATA THROUGH")
         
         #set up the producer to send messages to the next plugin
-        
+        sent_well = False
         #use the with argument to avoid creating too many channels and causing a hang
         try:
             
@@ -437,14 +452,15 @@ def send_to_next_plugin(next_plugin, payload, conn, out_channel, message):
             #logger.info(type(send_payload))
             producer.publish(send_payload, exchange='', routing_key=next_plugin, retry=True, 
                              retry_policy={'interval_start':1,
-                                           'interval_step':1,
+                                           'interval_step':2,
                                            'interval_max':10,
-                                           'max_retries':5})
+                                           'max_retries':30})
             
             logger.info("Output was published for %s"%payload["nmo"]["source"]["name"])
             
             #logger.info("Acking message")
-            message.ack()            
+            message.ack()
+            sent_well = True
 
         except:
             #if we can't publish we A) need to know why and B) need to kill everything
@@ -458,6 +474,9 @@ def send_to_next_plugin(next_plugin, payload, conn, out_channel, message):
             
     else:
         logger.warning("There is no next plugin, if this is not a storage plugin you may loose analysis data")
+        sent_well = True
+        
+    return sent_well
 
 def clean_function_output(result, payload):
     
