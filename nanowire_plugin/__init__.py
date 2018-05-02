@@ -237,17 +237,6 @@ def send(name, payload, output, connection, out_channel, minio_client, monitor_u
     elif output == None:
         err = "NO OUTPUT WAS RETURNED"
     
-       
-    try:
-        set_status(monitor_url,
-                   payload["nmo"]["job"]["job_id"],
-                   payload["nmo"]["task"]["task_id"],
-                   name, error=err)
-    except Exception as exp:
-        logger.warning("failed to set status")
-        logger.warning("exception: %s"%str(exp))
-        logger.warning("job_id: %s"%payload["nmo"]["job"]["job_id"])
-        logger.warning("task_id: %s"%payload["nmo"]["task"]["task_id"])
         
     #this log is for debug but makes the logs messy when left in production code
     #logger.info("Result is:- %s"%str(result))
@@ -297,6 +286,7 @@ def send(name, payload, output, connection, out_channel, minio_client, monitor_u
     if sent_success:
         #set status afer we've sent the message in case the publisher gets disconnected
         try:
+            logger.info("INFORMING THE MONITOR")
             set_status(monitor_url,
                        payload["nmo"]["job"]["job_id"],
                        payload["nmo"]["task"]["task_id"],
@@ -466,11 +456,12 @@ def send_to_next_plugin(next_plugin, payload, conn, out_channel, message):
             #if we can't publish we A) need to know why and B) need to kill everything
             logger.warning(traceback.format_exc())
             logger.warning("==================================")
-            logger.warning(send_payload)
+            #logger.warning(send_payload)
             #logger.warning("$$$$$$$$$$$$$$$$$$$$$")
             #logger.warning(str(type(send_payload)))
             #logger.warning("------------------------------------------------------")
-            thread.interrupt_main()
+            raise Exception("KILL MAIN THREAD")
+            #thread.interrupt_main()
             
     else:
         logger.warning("There is no next plugin, if this is not a storage plugin you may loose analysis data")

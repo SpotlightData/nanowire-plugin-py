@@ -8,7 +8,7 @@ Created on Fri Mar 23 11:33:24 2018
 #single file processing tools for nanowire-plugin
 
 from minio import Minio
-
+import subprocess
 import traceback
 import logging
 import json
@@ -25,10 +25,17 @@ except ImportError:
     from queue import Queue as qq
 
 
+try:
+    import thread
+except:
+    import _thread as thread
+
+
 
 from threading import Thread
 #import threading
 from kombu.mixins import ConsumerMixin
+from kombu.mixins import ConsumerProducerMixin
 #from kombu import Connection, Exchange, Queue
 from kombu import Connection, Queue
 
@@ -50,7 +57,9 @@ from nanowire_plugin import send, set_status, validate_payload, get_url
 logger = logging.getLogger("nanowire-plugin")
 
 
-class Worker(ConsumerMixin):
+logging.basicConfig(level=10, stream=sys.stdout)
+
+class Worker(ConsumerProducerMixin):
     def __init__(self, connection, queues, function, name, minio_client, monitor_url, debug_mode):
         
         
@@ -84,7 +93,14 @@ class Worker(ConsumerMixin):
             try:
                 self.on_task(*self.q.get())
             except Exception as ex:
+                logging.error("FOUND WHERE THAT LINKS TO:-")
                 logging.error(ex)
+                logging.error("BROKEN OUT OF THE MAIN LOOP, RUNNING THREADING BREAKER")
+                subprocess.call(['kill', '-2', '1'])
+                logging.error("RAN KILL COMMAND, NOW RUNNING KEYBOARD INTERUPT")
+                thread.interrupt_main()
+                logging.error("RAN KEYBOARD INTERUPT")
+                break
 
             except KeyboardInterrupt:
                 break
@@ -240,8 +256,10 @@ def bind(function, name, version="1.0.0", pulserate=25, debug_mode=0, set_timeou
             
             queues = [Queue(name)]
             with Connection(rabbit_url, heartbeat=25, ssl=True, transport_options={'confirm_publish':True}) as conn:
+                conn.connect()
                 worker = Worker(conn, queues, function, name, minio_client, monitor_url, debug_mode)
                 worker.run()
+
             
         else:
             logger.info("Not using ssl")
@@ -252,8 +270,10 @@ def bind(function, name, version="1.0.0", pulserate=25, debug_mode=0, set_timeou
             #set up celery connection
             queues = [Queue(name)]
             with Connection(rabbit_url, heartbeat=25, transport_options={'confirm_publish':True}) as conn:
+                conn.connect()
                 worker = Worker(conn, queues, function, name, minio_client, monitor_url, debug_mode)
                 worker.run()
+
     else:
         logger.info("Not using ssl")
 
@@ -263,8 +283,10 @@ def bind(function, name, version="1.0.0", pulserate=25, debug_mode=0, set_timeou
         #set up celery connection
         queues = [Queue(name)]
         with Connection(rabbit_url, heartbeat=25, transport_options={'confirm_publish':True}) as conn:
+            conn.connect()
             worker = Worker(conn, queues, function, name, minio_client, monitor_url, debug_mode)
             worker.run()
+
         
         
         

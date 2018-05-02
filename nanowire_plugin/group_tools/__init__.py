@@ -14,7 +14,7 @@ Created on Fri Mar 23 11:33:24 2018
 ############################
 
 from minio import Minio
-
+import subprocess
 import os
 import tarfile
 import traceback
@@ -33,8 +33,16 @@ except ImportError:
     from queue import Queue as qq
 import kombu
 from kombu.mixins import ConsumerMixin
+from kombu.mixins import ConsumerProducerMixin
 #from kombu import Connection, Exchange, Queue, pools
 from kombu import Connection, Queue
+
+
+try:
+    import thread
+except:
+    import _thread as thread
+
 
 #import time
 import sys
@@ -53,7 +61,7 @@ logger = logging.getLogger("nanowire-plugin")
 
 
 #This is the worker that does the uploading
-class GroupWorker(ConsumerMixin):
+class GroupWorker(ConsumerProducerMixin):
     def __init__(self, connection, queues, function, name, minio_client, monitor_url, debug_mode):
         
         
@@ -89,10 +97,19 @@ class GroupWorker(ConsumerMixin):
             try:
                 self.on_task(*self.q.get())
             except Exception as ex:
+                logging.error("FOUND WHERE THAT LINKS TO:-")
                 logging.error(ex)
+                logging.error("BROKEN OUT OF THE MAIN LOOP, RUNNING THREADING BREAKER")
+                subprocess.call(['kill', '-2', '1'])
+                logging.error("RAN KILL COMMAND, NOW RUNNING KEYBOARD INTERUPT")
+                thread.interrupt_main()
+                logging.error("RAN KEYBOARD INTERUPT")
+                break
 
             except KeyboardInterrupt:
                 break
+            
+        
 
     def on_task(self, body, message):
         logger.info("run task")
@@ -587,6 +604,7 @@ def group_bind(function, name, version="1.0.0", pulserate=25, debug_mode=0):
                 
             queues = [Queue(name)]
             with Connection(rabbit_url, heartbeat=25, ssl=True, transport_options={'confirm_publish':True}) as conn:
+                conn.connect()
                 worker = GroupWorker(conn, queues, function, name, minio_client, monitor_url, debug_mode)
                 logger.info("Starting consuming")
                 worker.run()
@@ -601,6 +619,7 @@ def group_bind(function, name, version="1.0.0", pulserate=25, debug_mode=0):
             
             queues = [Queue(name)]
             with Connection(rabbit_url, heartbeat=25, transport_options={'confirm_publish':True}) as conn:
+                conn.connect()
                 worker = GroupWorker(conn, queues, function, name, minio_client, monitor_url, debug_mode)
                 logger.info("Starting consuming")
                 worker.run()
@@ -616,6 +635,7 @@ def group_bind(function, name, version="1.0.0", pulserate=25, debug_mode=0):
         
         queues = [Queue(name)]
         with Connection(rabbit_url, heartbeat=25, transport_options={'confirm_publish':True}) as conn:
+            conn.connect()
             worker = GroupWorker(conn, queues, function, name, minio_client, monitor_url, debug_mode)
             logger.info("Starting consuming")
             worker.run()
