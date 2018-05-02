@@ -57,7 +57,7 @@ from nanowire_plugin import send, set_status, validate_payload, get_url
 logger = logging.getLogger("nanowire-plugin")
 
 
-logging.basicConfig(level=10, stream=sys.stdout)
+#logging.basicConfig(level=10, stream=sys.stdout)
 
 class Worker(ConsumerProducerMixin):
     def __init__(self, connection, queues, function, name, minio_client, monitor_url, debug_mode):
