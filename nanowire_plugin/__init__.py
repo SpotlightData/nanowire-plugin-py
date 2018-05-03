@@ -465,6 +465,7 @@ def send_to_next_plugin(next_plugin, payload, conn, out_channel, message):
             
     else:
         logger.warning("There is no next plugin, if this is not a storage plugin you may loose analysis data")
+        message.ack()
         sent_well = True
         
     return sent_well
