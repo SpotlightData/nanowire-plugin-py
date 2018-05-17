@@ -78,6 +78,8 @@ class Worker(ConsumerProducerMixin):
         self.workThread = Thread(target=self.run_tasks)
         self.workThread.daemon = True
         self.workThread.start()
+        
+        logging.debug("ESTABLISHED WORKER")
 
     def get_consumers(self, Consumer, channel):
         return [Consumer(queues=self.queues,
@@ -106,7 +108,7 @@ class Worker(ConsumerProducerMixin):
                 break
 
     def on_task(self, body, message):
-        #logger.info("run task")
+        logger.info("run task")
         try:
             data = body.decode("utf-8")
         except:

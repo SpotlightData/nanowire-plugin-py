@@ -23,7 +23,7 @@ import datetime
 #from ssl import PROTOCOL_TLSv1_2
 
 #from minio import Minio
-
+import os
 import time
 import sys
 
@@ -312,6 +312,7 @@ def get_url(payload, minio_cl):
         raise Exception("The payload should be a dictionary, is actually: %s, a %s"%(str(payload), str(type(payload))))
     #create the path to the target in minio
     path = join(
+        payload['nmo']['job']['job_id'],
         payload["nmo"]["task"]["task_id"],
         "input",
         "source",
@@ -319,9 +320,9 @@ def get_url(payload, minio_cl):
         
     #set the url of the file being examined
     try:
-        minio_cl.stat_object(payload["nmo"]["job"]["job_id"], path)
+        minio_cl.stat_object(os.environ['MINIO_BUCKET'], path)
         
-        url = minio_cl.presigned_get_object(payload["nmo"]["job"]["job_id"], path)
+        url = minio_cl.presigned_get_object(os.environ['MINIO_BUCKET'], path)
     #if we cant get the url from the monitor then we set it as None
     except:
         result = traceback.format_exc()
@@ -422,19 +423,6 @@ def send_to_next_plugin(next_plugin, payload, conn, out_channel, message):
         #use the with argument to avoid creating too many channels and causing a hang
         try:
             
-            #logger.info("CONNECTED?")
-            #logger.info(str(conn.connected))
-                
-            #logger.info("SET UP THE QUEUE")
-            #queue = Queue(name=next_plugin)
-            
-            #logger.info("BIND TO THE QUEUE")
-            #queue.maybe_bind(conn)
-            
-            #logger.info("MAKE SURE THE QUEUE EXISTS")
-            #queue.declare()
-            
-            
             logger.info("SET UP THE PRODUCER")
             producer = Producer(out_channel)
             
@@ -469,6 +457,22 @@ def send_to_next_plugin(next_plugin, payload, conn, out_channel, message):
         sent_well = True
         
     return sent_well
+    
+    
+def grab_file(url):
+    
+    if not os.path.exists('/tmp'):
+        os.mkdir('/tmp')
+    try:
+        filename = '/tmp/document'
+        urllib.request.urlretrieve(url, filename)
+        return filename
+    except:
+        
+        return "COULD NOT GRAB DOCUMENT, URL MAY HAVE EXPIRED"
+        
+        
+        
 
 def clean_function_output(result, payload):
     

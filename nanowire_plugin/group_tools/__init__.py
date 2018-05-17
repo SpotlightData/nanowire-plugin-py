@@ -418,7 +418,8 @@ class Minio_tool():
         
         
         try:        
-            bucket_name = nmo['job']['job_id']
+            bucket_name = os.environ['MINIO_BUCKET']
+            job_id = nmo['job']['job_id']
             task_id = nmo['task']['task_id']
             
         except:
@@ -430,7 +431,7 @@ class Minio_tool():
             
             self.minioClient.make_bucket(bucket_name)
             
-        save_name = '%s/group/%s.bin'%(task_id, plugin_name)
+        save_name = '%s/%s/group/%s.bin'%(job_id, task_id, plugin_name)
         
         
         logger.info("READING SAVE FILE")
@@ -447,7 +448,6 @@ class Minio_tool():
         self.clean_up_after_sending()
         
         #add to the payload locations
-        
         if 'source' in nmo.keys():
             p1 = True
             if 'misc' in nmo['source'].keys():
