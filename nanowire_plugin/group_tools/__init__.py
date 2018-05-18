@@ -417,8 +417,11 @@ class Minio_tool():
     def send_file(self, filename, nmo, plugin_name):
         
         
-        try:        
-            bucket_name = os.environ['MINIO_BUCKET']
+        try:
+            if 'MINIO_BUCKET' in os.environ.keys():
+                bucket_name = os.environ['MINIO_BUCKET']
+            else:
+                bucket_name = nmo['job']['job_id']
             job_id = nmo['job']['job_id']
             task_id = nmo['task']['task_id']
             

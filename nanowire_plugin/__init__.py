@@ -320,14 +320,21 @@ def get_url(payload, minio_cl):
         
     #set the url of the file being examined
     try:
-        minio_cl.stat_object(os.environ['MINIO_BUCKET'], path)
+        if 'MINIO_BUCKET' in os.environ.keys():
+            minio_cl.stat_object(os.environ['MINIO_BUCKET'], path)
         
-        url = minio_cl.presigned_get_object(os.environ['MINIO_BUCKET'], path)
+            url = minio_cl.presigned_get_object(os.environ['MINIO_BUCKET'], path)
+            
+        else:
+            minio_cl.stat_object(payload['nmo']['job']['job_id'], path)
+        
+            url = minio_cl.presigned_get_object(payload['nmo']['job']['job_id'], path)
     #if we cant get the url from the monitor then we set it as None
     except:
         result = traceback.format_exc()
         
         logger.warning("FAILED TO GET URL DUE TO: %s"%str(result))
+        logger.warning("target is %s"%path)
         url = None
     
     return url
@@ -416,7 +423,7 @@ def send_to_next_plugin(next_plugin, payload, conn, out_channel, message):
         logger.info("CREATING PAYLOAD STRING")
         send_payload = json.dumps(payload)
         
-        logger.info("CREATE A CHANNEL TO SEND THE DATA THROUGH")
+        #logger.info("CREATE A CHANNEL TO SEND THE DATA THROUGH")
         
         #set up the producer to send messages to the next plugin
         sent_well = False
@@ -425,6 +432,11 @@ def send_to_next_plugin(next_plugin, payload, conn, out_channel, message):
             
             logger.info("SET UP THE PRODUCER")
             producer = Producer(out_channel)
+            
+            #ensure the connection
+            logger.info("CONNECTION IS UP:- %s"%str(conn.connected))
+            #ensure the out_channel
+            logger.info("OUT CHANNEL IS UP:- %s"%str(out_channel.is_open))
             
             logger.info("Trying to publish result to %s"%next_plugin)
             #logger.info(type(send_payload))

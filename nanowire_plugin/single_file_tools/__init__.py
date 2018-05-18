@@ -95,14 +95,14 @@ class Worker(ConsumerProducerMixin):
             try:
                 self.on_task(*self.q.get())
             except Exception as ex:
-                logging.error("FOUND WHERE THAT LINKS TO:-")
+                #logging.error("FOUND WHERE THAT LINKS TO:-")
                 logging.error(ex)
-                logging.error("BROKEN OUT OF THE MAIN LOOP, RUNNING THREADING BREAKER")
-                subprocess.call(['kill', '-2', '1'])
-                logging.error("RAN KILL COMMAND, NOW RUNNING KEYBOARD INTERUPT")
-                thread.interrupt_main()
-                logging.error("RAN KEYBOARD INTERUPT")
-                break
+                #logging.error("BROKEN OUT OF THE MAIN LOOP, RUNNING THREADING BREAKER")
+                #subprocess.call(['kill', '-2', '1'])
+                #logging.error("RAN KILL COMMAND, NOW RUNNING KEYBOARD INTERUPT")
+                #thread.interrupt_main()
+                #logging.error("RAN KEYBOARD INTERUPT")
+               # break
 
             except KeyboardInterrupt:
                 break
