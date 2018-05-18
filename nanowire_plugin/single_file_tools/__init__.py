@@ -102,7 +102,7 @@ class Worker(ConsumerProducerMixin):
                 #logging.error("RAN KILL COMMAND, NOW RUNNING KEYBOARD INTERUPT")
                 #thread.interrupt_main()
                 #logging.error("RAN KEYBOARD INTERUPT")
-               # break
+                break
 
             except KeyboardInterrupt:
                 break

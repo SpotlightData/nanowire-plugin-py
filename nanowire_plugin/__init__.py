@@ -428,40 +428,49 @@ def send_to_next_plugin(next_plugin, payload, conn, out_channel, message):
         #set up the producer to send messages to the next plugin
         sent_well = False
         #use the with argument to avoid creating too many channels and causing a hang
-        try:
-            
-            logger.info("SET UP THE PRODUCER")
-            producer = Producer(out_channel)
-            
-            #ensure the connection
-            logger.info("CONNECTION IS UP:- %s"%str(conn.connected))
-            #ensure the out_channel
-            logger.info("OUT CHANNEL IS UP:- %s"%str(out_channel.is_open))
-            
-            logger.info("Trying to publish result to %s"%next_plugin)
-            #logger.info(type(send_payload))
-            producer.publish(send_payload, exchange='', routing_key=next_plugin, retry=True, 
-                             retry_policy={'interval_start':1,
-                                           'interval_step':2,
-                                           'interval_max':10,
-                                           'max_retries':30})
-            
-            logger.info("Output was published for %s"%payload["nmo"]["source"]["name"])
-            
-            #logger.info("Acking message")
-            message.ack()
-            sent_well = True
-
-        except:
-            #if we can't publish we A) need to know why and B) need to kill everything
-            logger.warning(traceback.format_exc())
-            logger.warning("==================================")
-            #logger.warning(send_payload)
-            #logger.warning("$$$$$$$$$$$$$$$$$$$$$")
-            #logger.warning(str(type(send_payload)))
-            #logger.warning("------------------------------------------------------")
-            raise Exception("KILL MAIN THREAD")
-            #thread.interrupt_main()
+        trying_to_publish = True
+        retry_quota = 30
+        times_tried = 0
+        while trying_to_publish:
+            try:
+                
+                logger.info("SET UP THE PRODUCER")
+                producer = Producer(out_channel)
+                
+                #ensure the connection
+                logger.info("CONNECTION IS UP:- %s"%str(conn.connected))
+                #ensure the out_channel
+                logger.info("OUT CHANNEL IS UP:- %s"%str(out_channel.is_open))
+                
+                logger.info("Trying to publish result to %s"%next_plugin)
+                #logger.info(type(send_payload))
+                producer.publish(send_payload, exchange='', routing_key=next_plugin, retry=True, 
+                                 retry_policy={'interval_start':1,
+                                               'interval_step':2,
+                                               'interval_max':10,
+                                               'max_retries':30})
+                
+                logger.info("Output was published for %s"%payload["nmo"]["source"]["name"])
+                
+                #logger.info("Acking message")
+                message.ack()
+                sent_well = True
+                
+                trying_to_publish = False
+    
+            except:
+                #if we can't publish we A) need to know why and B) need to kill everything
+                logger.warning("---")
+                logger.warning(traceback.format_exc())
+                logger.warning("==================================")
+                times_tried += 1 
+                #logger.warning(send_payload)
+                #logger.warning("$$$$$$$$$$$$$$$$$$$$$")
+                #logger.warning(str(type(send_payload)))
+                #logger.warning("------------------------------------------------------")
+                if times_tried >= retry_quota:
+                    raise Exception("KILL MAIN THREAD")
+                #thread.interrupt_main()
             
     else:
         logger.warning("There is no next plugin, if this is not a storage plugin you may loose analysis data")
