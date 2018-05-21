@@ -34,7 +34,7 @@ except:
 
 from threading import Thread
 #import threading
-from kombu.mixins import ConsumerMixin
+#from kombu.mixins import ConsumerMixin
 from kombu.mixins import ConsumerProducerMixin
 #from kombu import Connection, Exchange, Queue
 from kombu import Connection, Queue
@@ -144,28 +144,33 @@ class Worker(ConsumerProducerMixin):
         nmo = payload['nmo']
         jsonld = payload['jsonld']
         #pull the url from minio
-        url = get_url(payload, self.minio_client)
+        [status, url] = get_url(payload, self.minio_client)
         #************** There needs to be some way of getting the url before we hit this
         
-        try:
-            #result = self.function(nmo, jsonld, url)
-            result = run_function(self.function, nmo, jsonld, url)
-            
-        except Exception as exp:
-            if self.debug_mode > 0:
-                result = str(traceback.format_exc())
-                logger.info("THERE WAS A PROBLEM RUNNING THE MAIN FUNCTION: %s"%result)
-            else:
-                result = str(exp)
-                logger.info("THERE WAS A PROBLEM RUNNING THE MAIN FUNCTION: %s"%result)
+        if status == 'PASS':
         
-        job_stats = send(self.name, payload, result, self.connection, self.out_channel, self.minio_client, self.monitor_url, message, self.debug_mode)
-
-        if self.debug_mode >=3:
-            logger.info(str(job_stats))
-
-        logger.info("FINISHED RUNNING USER CODE AT %s"%str(datetime.datetime.now()))
-        logger.info("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
+            try:
+                #result = self.function(nmo, jsonld, url)
+                result = run_function(self.function, nmo, jsonld, url)
+                
+            except Exception as exp:
+                if self.debug_mode > 0:
+                    result = str(traceback.format_exc())
+                    logger.info("THERE WAS A PROBLEM RUNNING THE MAIN FUNCTION: %s"%result)
+                else:
+                    result = str(exp)
+                    logger.info("THERE WAS A PROBLEM RUNNING THE MAIN FUNCTION: %s"%result)
+            
+            job_stats = send(self.name, payload, result, self.connection, self.out_channel, self.minio_client, self.monitor_url, message, self.debug_mode)
+    
+            if self.debug_mode >=3:
+                logger.info(str(job_stats))
+    
+            logger.info("FINISHED RUNNING USER CODE AT %s"%str(datetime.datetime.now()))
+            logger.info("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
+            
+        else:
+            message.reject(requeue=True)
         #message.ack()
 
 

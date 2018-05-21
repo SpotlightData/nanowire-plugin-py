@@ -318,26 +318,39 @@ def get_url(payload, minio_cl):
         "source",
         payload["nmo"]["source"]["name"])
         
+    status = 'PASS'
     #set the url of the file being examined
     try:
+        #Check if we're using the MINIO_BUCKET enviromental varable. LEGACY
         if 'MINIO_BUCKET' in os.environ.keys():
-            minio_cl.stat_object(os.environ['MINIO_BUCKET'], path)
-        
-            url = minio_cl.presigned_get_object(os.environ['MINIO_BUCKET'], path)
             
+            #if inMinio is set in the nmo
+            if 'inMinio' in payload['nmo']['source']['misc'].keys():
+                
+                if payload['nmo']['source']['misc']['inMinio']:
+                    url = minio_cl.presigned_get_object(os.environ['MINIO_BUCKET'], path)
+                else:
+                    url = None
+            #if we are using the old system where inMinio is not present. LEGACY
+            else:
+                minio_cl.stat_object(os.environ['MINIO_BUCKET'], path)
+            
+                url = minio_cl.presigned_get_object(os.environ['MINIO_BUCKET'], path)
+                
         else:
             minio_cl.stat_object(payload['nmo']['job']['job_id'], path)
         
             url = minio_cl.presigned_get_object(payload['nmo']['job']['job_id'], path)
-    #if we cant get the url from the monitor then we set it as None
+    #if we cant get the url from the monitor then we set it as None and nack the message
     except:
         result = traceback.format_exc()
         
         logger.warning("FAILED TO GET URL DUE TO: %s"%str(result))
         logger.warning("target is %s"%path)
         url = None
+        status = 'FAIL'
     
-    return url
+    return [status, url]
 
 def inform_monitor(payload, name, monitor_url, minio_client, debug_mode):
     
