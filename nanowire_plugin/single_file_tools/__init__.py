@@ -219,14 +219,23 @@ def bind(function, name, version="1.0.0", pulserate=25, debug_mode=0, set_timeou
     logger.info("initialising plugin: %s"%name)
     
     
-    #set up the minio client. Do this before the AMPQ stuff since we keep changing
-    #out fucking minds on which version to use
-    minio_client = Minio(
-        environ["MINIO_HOST"] + ":" + environ["MINIO_PORT"],
-        access_key=environ["MINIO_ACCESS"],
-        secret_key=environ["MINIO_SECRET"],
-        secure=True if environ["MINIO_SCHEME"] == "https" else False)
+    #set up the minio client. Do this before the AMPQ stuff
     
+    if 'MINIO_REGION' in environ.keys():
+        minio_client = Minio(
+            environ["MINIO_HOST"] + ":" + environ["MINIO_PORT"],
+            access_key=environ["MINIO_ACCESS"],
+            secret_key=environ["MINIO_SECRET"],
+            region = environ['MINIO_REGION'],
+            secure=True if environ["MINIO_SCHEME"] == "https" else False)
+    else:
+        minio_client = Minio(
+            environ["MINIO_HOST"] + ":" + environ["MINIO_PORT"],
+            access_key=environ["MINIO_ACCESS"],
+            secret_key=environ["MINIO_SECRET"],
+            region=None,
+            secure=True if environ["MINIO_SCHEME"] == "https" else False)
+        
     '''
     #use a boto client to try and avoid some serious bugs with minio
     session = boto3.session.Session()
