@@ -312,7 +312,6 @@ def get_url(payload, minio_cl):
         raise Exception("The payload should be a dictionary, is actually: %s, a %s"%(str(payload), str(type(payload))))
     #create the path to the target in minio
     path = join(
-        payload['nmo']['job']['job_id'],
         payload["nmo"]["task"]["task_id"],
         "input",
         "source",
@@ -323,6 +322,8 @@ def get_url(payload, minio_cl):
     try:
         #Check if we're using the MINIO_BUCKET enviromental varable. LEGACY
         if 'MINIO_BUCKET' in os.environ.keys():
+            
+            path = join(payload['nmo']['job']['job_id'], path)
             
             #if inMinio is set in the nmo
             if 'inMinio' in payload['nmo']['source']['misc'].keys():
@@ -336,8 +337,12 @@ def get_url(payload, minio_cl):
                 minio_cl.stat_object(os.environ['MINIO_BUCKET'], path)
             
                 url = minio_cl.presigned_get_object(os.environ['MINIO_BUCKET'], path)
-                
+        
+        
+        #if the MINIO_BUCKET enviromental variable is not set    
         else:
+            
+            
             minio_cl.stat_object(payload['nmo']['job']['job_id'], path)
         
             url = minio_cl.presigned_get_object(payload['nmo']['job']['job_id'], path)
