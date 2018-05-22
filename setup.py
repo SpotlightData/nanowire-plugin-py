@@ -28,7 +28,7 @@ setup(
     maintainer_email='stuart@spotlightdata.co.uk',
     license='MIT',
     include_package_data=True,
-    install_requires=["minio", "pika", "kombu"],
+    install_requires=["minio", "kombu"],
     data_files=[
         ('.', ['VERSION'])
     ]
