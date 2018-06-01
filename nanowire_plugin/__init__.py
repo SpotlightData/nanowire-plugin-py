@@ -129,7 +129,7 @@ def get_next_plugin(this_plugin, workflow):
     return None
 
 
-def set_status(monitor_url, job_id, task_id, name, error=0):
+def set_status(monitor_url, job_id, task_id, name, debug_status=0, error=0):
     
     """sends a POST request to the monitor to notify it of task position"""
     
@@ -172,9 +172,11 @@ def set_status(monitor_url, job_id, task_id, name, error=0):
         #if we're working with python3
         if sys.version_info.major == 3:
             
-            logger.info("Running in python 3")
+            if debug_status >= 2:
+                logger.info("Running in python 3")
             
-            request_url = urllib.parse.urljoin(monitor_url,"/v4/tasks/%s/positions"%task_id)
+            request_url = monitor_url + "/v4/tasks/%s/positions"%task_id
+            #urllib.parse.urljoin(monitor_url,"/v4/tasks/%s/positions"%task_id)
             
             req = urllib.request.Request(request_url,
                 payload.encode(),
@@ -188,7 +190,8 @@ def set_status(monitor_url, job_id, task_id, name, error=0):
         #if we're working with python2
         elif sys.version_info.major == 2:
             
-            logger.info("Running in python 2")
+            if debug_status >= 2:
+                logger.info("Running in python 2")
             
             #there's no urljoin command in python2
             request_url = monitor_url + "/v4/tasks/%s/positions"%task_id       
@@ -207,6 +210,11 @@ def set_status(monitor_url, job_id, task_id, name, error=0):
             logger.warning("Running in an unknown version of python:- %s"%str(sys.version_info))
     except:
         logger.warning("COULD NOT CONNECT TO MONITOR")
+        if debug_status >= 2:
+            logger.warning("monitor url:- %s"%monitor_url)
+            logger.warning("request url:- %s"%request_url)
+            logger.warning(str(traceback.format_exc()))
+            logger.warning("=======================")
 
 #Rewrite send for the celery library
 def send(name, payload, output, connection, out_channel, minio_client, monitor_url, message, debug_mode):
@@ -275,7 +283,7 @@ def send(name, payload, output, connection, out_channel, minio_client, monitor_u
 
     logger.info("finished running user code on %s at %s"%(payload["nmo"]["source"]["name"], str(datetime.datetime.now())))
     
-    if debug_mode > 1:
+    if debug_mode > 1 and debug_mode != 5:
         logger.warning("SENDING:-")
         logger.warning(json.dumps(payload))
     
@@ -290,7 +298,7 @@ def send(name, payload, output, connection, out_channel, minio_client, monitor_u
             set_status(monitor_url,
                        payload["nmo"]["job"]["job_id"],
                        payload["nmo"]["task"]["task_id"],
-                       name, error=err)
+                       name, debug_status=debug_mode, error=err)
         except Exception as exp:
             logger.warning("failed to set status")
             logger.warning("exception: %s"%str(exp))
@@ -326,9 +334,9 @@ def get_url(payload, minio_cl):
             path = join(payload['nmo']['job']['job_id'], path)
             
             #if inMinio is set in the nmo
-            if 'inMinio' in payload['nmo']['source']['misc'].keys():
+            if 'inMinio' in payload['nmo']['task']['misc'].keys():
                 
-                if payload['nmo']['source']['misc']['inMinio']:
+                if payload['nmo']['task']['misc']['inMinio']:
                     url = minio_cl.presigned_get_object(os.environ['MINIO_BUCKET'], path)
                 else:
                     url = None
@@ -471,8 +479,7 @@ def send_to_next_plugin(next_plugin, payload, conn, out_channel, message):
                 logger.info("Output was published for %s"%payload["nmo"]["source"]["name"])
                 
                 #logger.info("Acking message")
-                message.ack()
-                sent_well = True
+
                 
                 trying_to_publish = False
     
@@ -487,8 +494,32 @@ def send_to_next_plugin(next_plugin, payload, conn, out_channel, message):
                 #logger.warning(str(type(send_payload)))
                 #logger.warning("------------------------------------------------------")
                 if times_tried >= retry_quota:
-                    raise Exception("KILL MAIN THREAD")
+                    raise Exception("COULD NOT PUBLISH, KILLING MAIN THREAD")
                 #thread.interrupt_main()
+        
+        #add 30 retries to the ack process as well
+        trying_to_ack = True
+        ack_retries = 30
+        while trying_to_ack:
+            
+            try:
+                
+                message.ack()
+                trying_to_ack = False
+                sent_well = True
+                
+            except:
+                
+                logger.warning("HAD TROUBLE ACKING TRYING ANOTHER %d times"%ack_retries)
+                
+                ack_retries -= 1
+                
+                if ack_retries <= 0:
+                    logger.warning("---")
+                    logger.warning(traceback.format_exc())
+                    logger.warning("==================================")
+                    raise Exception("COULD NOT ACK, KILLING MAIN THREAD")
+            
             
     else:
         logger.warning("There is no next plugin, if this is not a storage plugin you may loose analysis data")

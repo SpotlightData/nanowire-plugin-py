@@ -97,10 +97,10 @@ class Worker(ConsumerProducerMixin):
             except Exception as ex:
                 #logging.error("FOUND WHERE THAT LINKS TO:-")
                 logging.error(ex)
-                #logging.error("BROKEN OUT OF THE MAIN LOOP, RUNNING THREADING BREAKER")
-                #subprocess.call(['kill', '-2', '1'])
+                logging.error("BROKEN OUT OF THE MAIN LOOP, RUNNING THREADING BREAKER")
+                subprocess.call(['kill', '-2', '1'])
                 #logging.error("RAN KILL COMMAND, NOW RUNNING KEYBOARD INTERUPT")
-                #thread.interrupt_main()
+                thread.interrupt_main()
                 #logging.error("RAN KEYBOARD INTERUPT")
                 break
 
@@ -108,7 +108,15 @@ class Worker(ConsumerProducerMixin):
                 break
 
     def on_task(self, body, message):
-        logger.info("run task")
+        logger.info("run task %s"%str(self.debug_mode))
+
+        if self.debug_mode == 5:
+            logger.info("BODY:-")
+            logger.warning(body)
+            logger.info("MESSAGE:-")
+            logger.warning(message)
+            logger.warning("---------------------------")
+            
         try:
             data = body.decode("utf-8")
         except:
