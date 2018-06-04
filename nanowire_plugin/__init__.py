@@ -512,6 +512,18 @@ def send_to_next_plugin(next_plugin, payload, conn, out_channel, message):
                 
                 logger.warning("HAD TROUBLE ACKING TRYING ANOTHER %d times"%ack_retries)
                 
+                logger.info("CONNECTION IS UP:- %s"%str(conn.connected))
+                
+                if not conn.connected:
+                    conn.connect()
+                    
+                #ensure the out_channel
+                logger.info("OUT CHANNEL IS UP:- %s"%str(out_channel.is_open))
+                
+                
+                if not out_channel.is_open:
+                    out_channel.channel()              
+                
                 ack_retries -= 1
                 
                 if ack_retries <= 0:
