@@ -485,8 +485,9 @@ def send_to_next_plugin(next_plugin, payload, conn, out_channel, message):
     
             except:
                 #if we can't publish we A) need to know why and B) need to kill everything
-                logger.warning("---")
-                logger.warning(traceback.format_exc())
+                #logger.warning("---")
+                #logger.warning(traceback.format_exc())
+                logger.warning("Could not publish message, retrying. PLEASE NOTE THIS IS A WARNING, NOT AN ERROR")                
                 logger.warning("==================================")
                 times_tried += 1 
                 #logger.warning(send_payload)
@@ -494,6 +495,7 @@ def send_to_next_plugin(next_plugin, payload, conn, out_channel, message):
                 #logger.warning(str(type(send_payload)))
                 #logger.warning("------------------------------------------------------")
                 if times_tried >= retry_quota:
+                    logger.warning(traceback.format_exc())
                     raise Exception("COULD NOT PUBLISH, KILLING MAIN THREAD")
                 #thread.interrupt_main()
         
