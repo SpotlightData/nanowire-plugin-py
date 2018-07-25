@@ -18,6 +18,8 @@ import json
 from os import environ
 from os.path import join
 
+import uuid
+
 import datetime
 
 #from ssl import PROTOCOL_TLSv1_2
@@ -516,11 +518,15 @@ def send_to_next_plugin(next_plugin, payload, conn, out_channel, message):
                 
                 logger.info("CONNECTION IS UP:- %s"%str(conn.connected))
                 
-                if not conn.connected:
-                    conn.connect()
+                #add a sleep in to see if this helps us re-establish an ack
+                time.sleep(1)
+                
+                conn.connect()
                     
                 #ensure the out_channel
                 logger.info("OUT CHANNEL IS UP:- %s"%str(out_channel.is_open))
+                
+                logger.info("CONNECTION INFO IS:- %s"%str(conn.info()))
                 
                 
                 if not out_channel.is_open:
@@ -625,3 +631,72 @@ def clean_function_output(result, payload):
         else:
             return None
 
+#EXPEREMENTAL SECTION
+def create_task(nmo, new_jsonld):
+    
+    job_id = nmo["job"]["job_id"],
+    
+    monitor_url = environ["MONITOR_URL"]
+    
+    task_dict = {}
+    task_dict['_id'] = str(uuid.uuid4())
+    task_dict["name"] = "Extracted data file"
+    task_dict["type"] = "TestAction"
+    task_dict["jobId"] = job_id
+    
+    upload_dict = {}
+    upload_dict["type"] = "Example"
+    upload_dict["meta"] = new_jsonld
+    upload_dict["credentials"] = {"accessToken":environ["AMQP_USER"],
+                                "accessTokenSecret":environ["AMQP_PASS"],
+                                "consumerKey":environ["AMQP_USER"],
+                                "consumerSecret":environ["AMQP_PASS"]}
+    payload=json.dumps({
+        "task":task_dict,
+        "upload":upload_dict})
+        
+    #if we're working with python3
+    if sys.version_info.major == 3:
+        
+        #if debug_status >= 2:
+        #    logger.info("Running in python 3")
+        
+        request_url = monitor_url + "/v1/tasks"
+        #urllib.parse.urljoin(monitor_url,"/v4/tasks/%s/positions"%task_id)
+        
+        req = urllib.request.Request(request_url,
+            payload.encode(),
+            headers={
+                "Content-Type": "application/json"
+            })
+            
+        result = urllib.request.urlopen(req)
+        
+        #logger.info("Task creation result was")
+        #logger.info(str(result))
+
+    
+    #if we're working with python2
+    elif sys.version_info.major == 2:
+        
+        #if debug_status >= 2:
+        #    logger.info("Running in python 2")
+        
+        #there's no urljoin command in python2
+        request_url = monitor_url + "/v1/tasks"       
+        
+        req = urllib2.Request(request_url,
+            payload.encode(),
+            headers={
+                "Content-Type": "application/json"
+            })
+            
+        result = urllib2.urlopen(req)
+        
+        logger.info("Task creation result was")
+        logger.info(str(result))
+    
+    #if we're not in python2 or python3
+    else:
+        
+        logger.warning("Running in an unknown version of python:- %s"%str(sys.version_info))
