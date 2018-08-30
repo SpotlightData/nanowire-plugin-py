@@ -7,43 +7,28 @@ Created on Fri Mar 23 11:33:24 2018
 
 #single file processing tools for nanowire-plugin
 
+import os
 from minio import Minio
-import subprocess
+import time
 import traceback
 import logging
 import json
 from os import environ
 import inspect
 
-import kombu
+import requests
 
 #from ssl import PROTOCOL_TLSv1_2
 
-try:
-    from Queue import Queue as qq
-except ImportError:
-    from queue import Queue as qq
 
-
-try:
-    import thread
-except:
-    import _thread as thread
-
-
-
-from threading import Thread
-#import threading
-#from kombu.mixins import ConsumerMixin
-from kombu.mixins import ConsumerProducerMixin
-#from kombu import Connection, Exchange, Queue
-from kombu import Connection, Queue
 
 import sys
-import hashlib
+#import hashlib
 import datetime
 
-from nanowire_plugin import send, set_status, validate_payload, get_url
+#import urllib.request
+
+from nanowire_plugin import send
 
 #from minio.error import AccessDenied
 
@@ -59,8 +44,8 @@ logger = logging.getLogger("nanowire-plugin")
 
 #logging.basicConfig(level=10, stream=sys.stdout)
 
-class Worker(ConsumerProducerMixin):
-    def __init__(self, connection, queues, function, name, minio_client, monitor_url, debug_mode):
+class Worker(object):
+    def __init__(self, function, name, debug_mode, monitor_url, minio_client):
         
         
         self.name = name
@@ -68,146 +53,66 @@ class Worker(ConsumerProducerMixin):
         self.minio_client = minio_client
         self.monitor_url = monitor_url
         self.debug_mode = debug_mode
-        self.connect_max_retries=5
-        
-        self.connection = connection
-        self.queues = queues
-        self.q = qq()
-        self.out_channel = self.connection.channel()
-        
-        self.workThread = Thread(target=self.run_tasks)
-        self.workThread.daemon = True
-        self.workThread.start()
-        
+
         logging.debug("ESTABLISHED WORKER")
 
-    def get_consumers(self, Consumer, channel):
-        return [Consumer(queues=self.queues,
-                         callbacks=[self.on_message],
-                         prefetch_count=1, no_ack=False)]
-
-    def on_message(self, body, message):
-        #logger.info("new message to internal queue")
-        self.q.put((body, message))
-
-    def run_tasks(self):
+    def run(self):
         while True:
-            try:
-                self.on_task(*self.q.get())
-            except Exception as ex:
-                #logging.error("FOUND WHERE THAT LINKS TO:-")
-                logging.error(ex)
-                logging.error("BROKEN OUT OF THE MAIN LOOP, RUNNING THREADING BREAKER")
-                subprocess.call(['kill', '-2', '1'])
-                #logging.error("RAN KILL COMMAND, NOW RUNNING KEYBOARD INTERUPT")
-                thread.interrupt_main()
-                #logging.error("RAN KEYBOARD INTERUPT")
-                break
-
-            except KeyboardInterrupt:
-                break
-
-    def on_task(self, body, message):
-        logger.info("run task %s"%str(self.debug_mode))
-
-        if self.debug_mode == 5:
-            logger.info("BODY:-")
-            logger.warning(body)
-            logger.info("MESSAGE:-")
-            logger.warning(message)
-            logger.warning("---------------------------")
             
-        try:
-            data = body.decode("utf-8")
-        except:
-            data = body
-
-        if data == None:
+            message = requests.get(os.environ['CONTROLLER_BASE_URI'] + '/v1/tasks/?pluginId=' + os.environ['PLUGIN_ID'] + '&pluginInstance=' + os.environ['POD_NAME'])
             
-            logger.info("Empty input")
+            #print("-------------------")
+            #print(message.status_code)
+            #print(dir(message))
+            #print(message.text)
+            #print("-------------------")
+            code = message.status_code
             
-        else:
-            #try to load the payload into a dictionary
-            try:
-                payload = json.loads(data)
+            if code == 200:
                 
-                logger.info("PAYLOAD EXTRACTED")
-                #logger.info(str(payload))
-                #logger.info(type(payload))
-            except:
-                if sys.version_info.major == 3:
-                    set_status(self.monitor_url, "Unknown", "Unknown", self.name, error="Message passed to %s is incomplete")
+                payload = json.loads(message.text)
+                
+                meta = payload['metadata']
+                jsonld = payload['jsonld']
+                try:
+                    url = meta['task']['metadata']['cacheURL']
+                except:
+                    url = None
+                    
+                if meta['job']['workflow']['type'] == 'GROUP':
+                    logger.warning("SINGLE FILE PLUGIN TOOL WAS SENT A GROUP JOB")
+                    
                 else:
-                    set_status(self.monitor_url, u"Unknown", u"Unknown", self.name, error="Message passed to %s is incomplete")
-                #remove the bad file from the queue
-                message.ack()
-                logger.error("The end of the file may have been cut off by rabbitMQ, last 10 characters are: %s"%data[0:10])
-                raise Exception("Problem with payload, payload should be json serializeable. Payload is %s"%data)
+                    #try to run our function
+                    try:
+                        #result = self.function(nmo, jsonld, url)
+                        result = run_function(self.function, meta, jsonld, url)
+                        
+                    except Exception as exp:
+                        if self.debug_mode > 0:
+                            result = str(traceback.format_exc())
+                            logger.info("THERE WAS A PROBLEM RUNNING THE MAIN FUNCTION: %s"%result)
+                        else:
+                            result = str(exp)
+                            logger.info("THERE WAS A PROBLEM RUNNING THE MAIN FUNCTION: %s"%result)
+                            
+
+                    job_stats = send(meta, result, self.minio_client, self.debug_mode)
+                    
+                    
+                    if self.debug_mode >= 1:
+                        logger.info(job_stats)
+                            
+                    logger.info("FINISHED RUNNING USER CODE AT %s"%str(datetime.datetime.now()))
+                    logger.info("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
+                    
+                            
                 
-            #check that the payload is valid. If not this function returns the errors that tell the user why it's not
-            #valid
-            validate_payload(payload)
-            
-
-        nmo = payload['nmo']
-        jsonld = payload['jsonld']
-        #pull the url from minio
-        [status, url] = get_url(payload, self.minio_client)
-        #************** There needs to be some way of getting the url before we hit this
-        
-        if status == 'PASS':
-        
-            try:
-                #result = self.function(nmo, jsonld, url)
-                result = run_function(self.function, nmo, jsonld, url)
-                
-            except Exception as exp:
-                if self.debug_mode > 0:
-                    result = str(traceback.format_exc())
-                    logger.info("THERE WAS A PROBLEM RUNNING THE MAIN FUNCTION: %s"%result)
-                else:
-                    result = str(exp)
-                    logger.info("THERE WAS A PROBLEM RUNNING THE MAIN FUNCTION: %s"%result)
-            
-            job_stats = send(self.name, payload, result, self.connection, self.out_channel, self.minio_client, self.monitor_url, message, self.debug_mode)
-    
-            if self.debug_mode >=3:
-                logger.info(str(job_stats))
-    
-            logger.info("FINISHED RUNNING USER CODE AT %s"%str(datetime.datetime.now()))
-            logger.info("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
-            
-        else:
-            message.reject(requeue=True)
-        #message.ack()
+            elif code == 404:
+                time.sleep(1)
 
 
-
-#The function that does the hashing
-def hash_func(text):
-    
-    if not isinstance(text, str):
-        raise Exception("The input to the hashing function should be a string, it is actually: %s, a %s"%(text, type(text)))
-    
-
-    hs = hashlib.sha1(text.encode('utf-8'))
-    hs = hs.hexdigest()
-    
-    #lt.log_debug(logger, 'TEXT ENCODED', input_dict={"text":text, "hash":hs})  
-    
-    return hs
-    
-    
-def clear_queue(q):
-    
-    try:
-        while True:
-            q.get_nowait()
-    except:
-        pass
-
-
-def bind(function, name, version="1.0.0", pulserate=25, debug_mode=0, set_timeout=0):
+def bind(function, name, debug_mode=0):
     """binds a function to the input message queue"""
     
     if not isinstance(name, str):
@@ -217,9 +122,6 @@ def bind(function, name, version="1.0.0", pulserate=25, debug_mode=0, set_timeou
     logger.setLevel(logging.DEBUG)
     
     if debug_mode > 0:
-        
-        logger.info("Running with kombu version %s"%str(kombu.__version__))
-    
         #write to screen to ensure logging is working ok
         #print "Initialising nanowire lib, this is a print"
         logger.info("Running on %s"%sys.platform)
@@ -253,7 +155,7 @@ def bind(function, name, version="1.0.0", pulserate=25, debug_mode=0, set_timeou
                                     aws_secret_access_key=environ['MINIO_SECRET'],
                                     secure=True if environ['MINIO_SCHEME']=='https' else False)    
     '''
-    minio_client.set_app_info(name, version)
+    minio_client.set_app_info(name, '1.0.0')
 
     monitor_url = environ["MONITOR_URL"]
 
@@ -272,45 +174,9 @@ def bind(function, name, version="1.0.0", pulserate=25, debug_mode=0, set_timeou
 
     #this is only commented out since I'm trying to find the source of these terrible errors
     
-    if environ.get("AMQP_SECURE") != None:
-        if environ["AMQP_SECURE"] == "1":
-            logger.info("Using ssl connection")
-
-            rabbit_url = "amqp://%s:%s@%s:%s/"%(environ["AMQP_USER"], environ["AMQP_PASS"], environ["AMQP_HOST"], environ["AMQP_PORT"])
-            
-            queues = [Queue(name)]
-            with Connection(rabbit_url, heartbeat=25, ssl=True, transport_options={'confirm_publish':True}) as conn:
-                conn.connect()
-                worker = Worker(conn, queues, function, name, minio_client, monitor_url, debug_mode)
-                worker.run()
-
-            
-        else:
-            logger.info("Not using ssl")
-            #initialise the celery worker
-            rabbit_url = "amqp://%s:%s@%s:%s/"%(environ["AMQP_USER"], environ["AMQP_PASS"], environ["AMQP_HOST"], environ["AMQP_PORT"])
-            
-            #set up celery connection
-            #set up celery connection
-            queues = [Queue(name)]
-            with Connection(rabbit_url, heartbeat=25, transport_options={'confirm_publish':True}) as conn:
-                conn.connect()
-                worker = Worker(conn, queues, function, name, minio_client, monitor_url, debug_mode)
-                worker.run()
-
-    else:
-        logger.info("Not using ssl")
-
-        #initialise the celery worker
-        rabbit_url = "amqp://%s:%s@%s:%s/"%(environ["AMQP_USER"], environ["AMQP_PASS"], environ["AMQP_HOST"], environ["AMQP_PORT"])
-        
-        #set up celery connection
-        queues = [Queue(name)]
-        with Connection(rabbit_url, heartbeat=25, transport_options={'confirm_publish':True}) as conn:
-            conn.connect()
-            worker = Worker(conn, queues, function, name, minio_client, monitor_url, debug_mode)
-            worker.run()
-
+    worker = Worker(function, name, debug_mode, monitor_url, minio_client)
+    worker.run()
+    logger.warning("PAST THE RUN FUNCTION, SOMETHING HAS GONE VERY WRONG")
         
         
         

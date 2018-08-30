@@ -5,7 +5,7 @@ verify_ssl = true
 
 [packages]
 gevent = "*"
-pika = "*"
+requests = "*"
 minio = "*"
 
 [requires]
