@@ -46,9 +46,8 @@ logger = logging.getLogger("nanowire-plugin")
 
 #This is the worker that does the uploading
 class GroupWorker(object):
-    def __init__(self, function, name, minio_client, monitor_url, debug_mode):
+    def __init__(self, function, minio_client, monitor_url, debug_mode):
         
-        self.name = name
         self.function = function
         self.minio_client = minio_client
         self.monitor_url = monitor_url
@@ -480,17 +479,9 @@ def run_group_function(function , read_tool, write_tool, meta):
 
 
 
-def group_bind(function, name, version="1.0.0", pulserate=25, debug_mode=0):
+def group_bind(function, version="1.0.0", debug_mode=0):
     """binds a function to the input message queue"""
     
-    #time.sleep(120)
-    
-    if not isinstance(name, str):
-        raise Exception("plugin name should be a string, it is actually %s"%name)
-        
-    if not isinstance(pulserate, int):
-        raise Exception("Pulserate should be an intiger, is actually %s, a %s"%(str(pulserate), str(type(pulserate))))
-
     #set up the logging
     logger.setLevel(logging.DEBUG)
     
@@ -500,9 +491,7 @@ def group_bind(function, name, version="1.0.0", pulserate=25, debug_mode=0):
     #write to screen to ensure logging is working ok
     #print "Initialising nanowire lib, this is a print"
     logger.info("initialising nanowire lib")
-    
-    logger.info("initialising plugin: %s"%name)
-    
+
     
     #set up the minio client
     minio_client = Minio(
@@ -511,11 +500,11 @@ def group_bind(function, name, version="1.0.0", pulserate=25, debug_mode=0):
         secret_key=environ["MINIO_SECRET"],
         secure=True if environ["MINIO_SCHEME"] == "https" else False)
         
-    minio_client.set_app_info(name, version)
+    #minio_client.set_app_info(name, version)
 
     monitor_url = environ["MONITOR_URL"]
 
-    worker = GroupWorker(function, name, minio_client, monitor_url, debug_mode)
+    worker = GroupWorker(function, minio_client, monitor_url, debug_mode)
     logger.info("Starting consuming")
     worker.run()
                 

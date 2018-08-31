@@ -45,10 +45,8 @@ logger = logging.getLogger("nanowire-plugin")
 #logging.basicConfig(level=10, stream=sys.stdout)
 
 class Worker(object):
-    def __init__(self, function, name, debug_mode, monitor_url, minio_client):
+    def __init__(self, function, debug_mode, monitor_url, minio_client):
         
-        
-        self.name = name
         self.function = function
         self.minio_client = minio_client
         self.monitor_url = monitor_url
@@ -75,7 +73,7 @@ class Worker(object):
                 meta = payload['metadata']
                 jsonld = payload['jsonld']
                 try:
-                    url = meta['task']['metadata']['cacheURL']
+                    url = payload['url']
                 except:
                     url = None
                     
@@ -85,7 +83,7 @@ class Worker(object):
                 else:
                     #try to run our function
                     try:
-                        #result = self.function(nmo, jsonld, url)
+                        #result = self.function(metadata, jsonld, url)
                         result = run_function(self.function, meta, jsonld, url)
                         
                     except Exception as exp:
@@ -112,11 +110,8 @@ class Worker(object):
                 time.sleep(1)
 
 
-def bind(function, name, debug_mode=0):
+def bind(function, debug_mode=0):
     """binds a function to the input message queue"""
-    
-    if not isinstance(name, str):
-        raise Exception("plugin name should be a string, it is actually %s"%name)
     
     #set up the logging
     logger.setLevel(logging.DEBUG)
@@ -125,8 +120,6 @@ def bind(function, name, debug_mode=0):
         #write to screen to ensure logging is working ok
         #print "Initialising nanowire lib, this is a print"
         logger.info("Running on %s"%sys.platform)
-    
-    logger.info("initialising plugin: %s"%name)
     
     
     #set up the minio client. Do this before the AMPQ stuff
@@ -155,26 +148,22 @@ def bind(function, name, debug_mode=0):
                                     aws_secret_access_key=environ['MINIO_SECRET'],
                                     secure=True if environ['MINIO_SCHEME']=='https' else False)    
     '''
-    minio_client.set_app_info(name, '1.0.0')
+    #minio_client.set_app_info(name, '1.0.0')
 
     monitor_url = environ["MONITOR_URL"]
 
     logger.info("initialised nanowire lib", extra={
         "monitor_url": monitor_url,
-        "minio": environ["MINIO_HOST"],
-        "rabbit": environ["AMQP_HOST"]
+        "minio": environ["MINIO_HOST"]
     })
     
     logger.info("monitor_url: %s"%monitor_url)
     logger.info("minio: %s"%environ["MINIO_HOST"])
-    logger.info("rabbit: %s"%environ["AMQP_HOST"])
 
-
-    logger.info("consuming from %s"%name)
 
     #this is only commented out since I'm trying to find the source of these terrible errors
     
-    worker = Worker(function, name, debug_mode, monitor_url, minio_client)
+    worker = Worker(function, debug_mode, monitor_url, minio_client)
     worker.run()
     logger.warning("PAST THE RUN FUNCTION, SOMETHING HAS GONE VERY WRONG")
         
@@ -191,7 +180,7 @@ def validate_single_file_function(function):
         
         arguments = inspect.getargspec(function)[0]
         
-    allowed = ['self', 'jsonld', 'nmo', 'url']
+    allowed = ['self', 'jsonld', 'metadata', 'url']
     
     arg_dict = set()
     
@@ -203,14 +192,14 @@ def validate_single_file_function(function):
             raise Exception("ARGUMENTS MAY NOT BE REPEATED")
             
         if arg not in allowed:
-            raise Exception("FUNCTION MAY ONLY USE ALLOWED ARGUMENTS, ALLOWED ARGUMENTS ARE: jsonld, nmo, url, YOU HAVE USED THE ARGUMENT %s"%arg)
+            raise Exception("FUNCTION MAY ONLY USE ALLOWED ARGUMENTS, ALLOWED ARGUMENTS ARE: jsonld, metadata, url, YOU HAVE USED THE ARGUMENT %s"%arg)
     
     if 'jsonld' not in arguments:
         
         raise Exception("FUNCTION MUST TAKE jsonld AS AN ARGUMENT")
         
 
-def run_function(function, nmo, jsonld, url):
+def run_function(function, metadata, jsonld, url):
 
 
     if sys.version_info.major == 3:
@@ -224,39 +213,39 @@ def run_function(function, nmo, jsonld, url):
     arguments = inspect.getargspec(function)[0]
     
     #3 argument variations
-    if arguments == ['nmo', 'jsonld', 'url'] or arguments == ['self', 'nmo', 'jsonld', 'url']:
+    if arguments == ['metadata', 'jsonld', 'url'] or arguments == ['self', 'metadata', 'jsonld', 'url']:
         
-        result = function(nmo, jsonld, url)
-        
-        return result
-        
-    elif arguments == ['nmo', 'url', 'jsonld'] or arguments == ['self', 'nmo', 'url', 'jsonld']:
-        
-        result = function(nmo, url, jsonld)
+        result = function(metadata, jsonld, url)
         
         return result
         
-    elif arguments == ['jsonld', 'nmo', 'url'] or arguments == ['self', 'jsonld', 'nmo', 'url']:
+    elif arguments == ['metadata', 'url', 'jsonld'] or arguments == ['self', 'metadata', 'url', 'jsonld']:
         
-        result = function(jsonld, nmo, url)
-        
-        return result
-        
-    elif arguments == ['jsonld', 'url', 'nmo'] or arguments == ['self', 'jsonld', 'url', 'nmo']:
-        
-        result = function(jsonld, url, nmo)
+        result = function(metadata, url, jsonld)
         
         return result
         
-    elif arguments == ['url', 'nmo', 'jsonld'] or arguments == ['self', 'url', 'nmo', 'jsonld']:
+    elif arguments == ['jsonld', 'metadata', 'url'] or arguments == ['self', 'jsonld', 'metadata', 'url']:
         
-        result = function(url, nmo, jsonld)
+        result = function(jsonld, metadata, url)
         
         return result
         
-    elif arguments == ['url', 'jsonld', 'nmo'] or arguments == ['self', 'url', 'jsonld', 'nmo']:
+    elif arguments == ['jsonld', 'url', 'metadata'] or arguments == ['self', 'jsonld', 'url', 'metadata']:
         
-        result = function(url, jsonld, nmo)
+        result = function(jsonld, url, metadata)
+        
+        return result
+        
+    elif arguments == ['url', 'metadata', 'jsonld'] or arguments == ['self', 'url', 'metadata', 'jsonld']:
+        
+        result = function(url, metadata, jsonld)
+        
+        return result
+        
+    elif arguments == ['url', 'jsonld', 'metadata'] or arguments == ['self', 'url', 'jsonld', 'metadata']:
+        
+        result = function(url, jsonld, metadata)
         
         return result
         
@@ -274,15 +263,15 @@ def run_function(function, nmo, jsonld, url):
         
         return result
 
-    elif arguments == ['nmo', 'jsonld'] or arguments == ['self', 'nmo', 'jsonld']:
+    elif arguments == ['metadata', 'jsonld'] or arguments == ['self', 'metadata', 'jsonld']:
         
-        result = function(nmo, jsonld)
+        result = function(metadata, jsonld)
         
         return result
         
-    elif arguments == ['jsonld', 'nmo'] or arguments == ['self', 'jsonld', 'nmo']:
+    elif arguments == ['jsonld', 'metadata'] or arguments == ['self', 'jsonld', 'metadata']:
         
-        result = function(jsonld, nmo)
+        result = function(jsonld, metadata)
         
         return result
         
