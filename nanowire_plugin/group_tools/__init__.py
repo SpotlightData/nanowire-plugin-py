@@ -119,7 +119,7 @@ class GroupWorker(object):
                     if not isinstance(result, str):
             
                         try:
-                            new_payloads = minio_sender.send_file("/output/results.json", meta, self.name)
+                            new_payloads = minio_sender.send_file("/output/results.json", meta)
                             
                             if isinstance(result, dict):
                                 result['storePayloads'] = new_payloads
@@ -341,7 +341,7 @@ class Minio_tool():
         self.minioClient = minio_client
         
         
-    def send_file(self, filename, meta, plugin_name):
+    def send_file(self, filename, meta):
         
         
         try:
@@ -362,7 +362,7 @@ class Minio_tool():
             
             self.minioClient.make_bucket(bucket_name)
             
-        save_name = '%s/%s/group/%s.bin'%(job_id, task_id, plugin_name)
+        save_name = '%s/%s/group.bin'%(job_id, task_id)
         
         #read the outputted jsonld for storage
         logger.info("READING SAVE FILE")

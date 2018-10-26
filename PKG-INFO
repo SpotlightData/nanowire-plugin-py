@@ -1,0 +1,15 @@
+Metadata-Version: 1.2
+Name: nanowire_plugin
+Version: 0.14.8
+Summary: Tool for creating python nanowire plugins
+Home-page: https://github.com/SpotlightData/nanowire-plugin-py
+Author: Stuart Bowe/Barnaby "Southclaws" Keene
+Author-email: stuart@spotlightdata.co.uk
+Maintainer: Stuart Bowe
+Maintainer-email: stuart@spotlightdata.co.uk
+License: MIT
+Description: UNKNOWN
+Keywords: nanowire,spotlight data
+Platform: UNKNOWN
+Requires: minio
+Requires: requests

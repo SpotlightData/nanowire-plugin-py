@@ -22,7 +22,7 @@ setup(
     keywords=['nanowire', 'spotlight data'],
     requires=['minio', "requests"],
     url="https://github.com/SpotlightData/nanowire-plugin-py",
-    author='Barnaby "Southclaws" Keene/Stuart Bowe',
+    author='Stuart Bowe/Barnaby "Southclaws" Keene',
     author_email='stuart@spotlightdata.co.uk',
     maintainer='Stuart Bowe',
     maintainer_email='stuart@spotlightdata.co.uk',

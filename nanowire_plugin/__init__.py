@@ -154,9 +154,22 @@ def send_result(output, metadata, error):
              
     #This bit sends the result to the controller. It is the most likely
     #source of trouble
-    r = requests.put(os.environ['CONTROLLER_BASE_URI'] + '/v1/tasks/' + metadata['task']['_id'],
-                     data=json.dumps(send_json), headers={'content-type':'application/json'})
-    
+    trying = True
+    tries = 0
+    backoff = 1
+    while trying:
+        try:
+            r = requests.put(os.environ['CONTROLLER_BASE_URI'] + '/v1/tasks/' + metadata['task']['_id'],
+                             data=json.dumps(send_json), headers={'content-type':'application/json'})
+            trying = False
+        except:
+            tries += 1
+            time.sleep(backoff)
+            backoff *= 2
+            if tries >= 5:
+                r = requests.put(os.environ['CONTROLLER_BASE_URI'] + '/v1/tasks/' + metadata['task']['_id'],
+                 data=json.dumps(send_json), headers={'content-type':'application/json'})
+
     if r.status_code != 200:
         logger.warning(str(dir(r)))
         logger.warning(str(r.reason))

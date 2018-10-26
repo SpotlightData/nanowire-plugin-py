@@ -11,19 +11,19 @@ Library is on PyPI: https://pypi.python.org/pypi/nanowire-plugin
 ## Usage
 
 ```python
-from nanowire_plugin import bind
+from nanowire_plugin.single_file_tools import bind
 
-def my_analysis(nmo, jsonld, url):
+def my_analysis(jsonld, metadata, url):
     # perform analysis
 
     return result
 
-bind(my_analysis, "my_plugin")
+bind(my_analysis)
 ```
 
 Callback function parameters:
 
-- `nmo`: a copy of the Nanowire Metadata Object (for `source.misc` access)
+- `metadata`: a copy of the Nanowire Metadata Object (for `source.misc` access)
 - `jsonld`: the JSON-LD document to mutate
 - `url`: a URL pointing to the task's source file
 
