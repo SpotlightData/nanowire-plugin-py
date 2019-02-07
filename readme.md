@@ -1,5 +1,7 @@
 # Nanowire Plugin Interface
 
+[![Build Status](https://travis-ci.org/SpotlightData/nanowire-plugin-py.svg?branch=master)](https://travis-ci.org/SpotlightData/nanowire-plugin-py)
+
 This is the Python library for receiving data in a Nanowire pipeline. This library provides a wrapper around the nanowire controller API. It allows the user to easily create new plugins. NOTE: It is recommended to start by using the [Nanowire Python Plugin Skeleton](https://github.com/SpotlightData/nanowire-python-plugin-skeleton) if you are intending to make a new plugin instead of using this library from scratch.
 
 ## Installation
