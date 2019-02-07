@@ -1,0 +1,9 @@
+language: python
+deploy:
+  provider: pypi
+  user: spotlightdata
+  password:
+    secure: pnNJnYlprzOmgYFnLojN16QHQ+sAqLjFbpzi9E8UFWkwrlVxCgRCJ4ax1f4M4CWRBPYRtDWz0cIRU4K6BLpK0N+tVs5GOpvQT1f7hmxOmp12AnI90pGw25Vg3G7j46YfsRO1YIiXi+Si+Kp5dqkCy5QOJ1nvVTx5oMNJs5AM+h9zHrOpHgNsIfJlA0vCJrrJNEb/vHnD6cZMqQwXRUu/9nRgLn5Ddgi85KiJ553y2mGzKUtyXMhVimvUPgeMwEtRoemoZ6dxFUsLvqQeAXVPIvjdKVd37P6FTkU+LED71TLL/I1jndEd0UTlbWnbIrz6x/vMq6W5MLLrq1I+ABkmkX3T8uu3eXbAG9xi48X182xa2aV+9J2pqnyydNcXnPTEnfj38ev4PK3SbfwZ3CoINWNaAqozlyLPE4MZY6Ip0r4UY4mpsdE3UB68fjc3GJMCrb7d2jR2I7kq+5wMggxjftk49XL6rNQHc3wzmYMFHnPme/7mPwXrWca9v7NlDFiH+Aq9w/5NCBcRiT6WSEQDKBMBkoMa7BmnKi05HgbmLYroKef0pLpoTQE6dpQB0oTJf++50jPUnpPqGWaXFmAaqtkTo8QVOJar1bD3qXwTq4efCeS2kYVYM4BTTpi9hun35476+KnaQL5D4UOxbWQmQ7u6oGCRGfu9hCICx+v8+mk=
+    on:
+      tags: true
+
