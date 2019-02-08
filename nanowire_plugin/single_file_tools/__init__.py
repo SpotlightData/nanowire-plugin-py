@@ -25,19 +25,25 @@ logger = logging.getLogger("nanowire-plugin")
 
 class Worker(object):
     task_handler = None
-
     controller_base_uri = None
     plugin_id = None
+    pod_name = None
 
 
     def __init__(self, task_handler):
         logging.debug("Constructing new single file worker for " + str(task_handler))
         self.plugin_instance = os.environ['POD_NAME']
         self.controller_base_uri = os.environ['CONTROLLER_BASE_URI']
+        self.plugin_id = os.environ['PLUGIN_ID']
         self.task_handler = task_handler
 
-    def report_task_failure(self, taskId, jsonld):
-        pass
+    def report_task_failure(self, taskId, errorMessage):
+        request_url = "{}/v1/tasks/{}".format(self.controller_base_uri, taskId)
+        requests.put(request_url, json={
+            'pluginInstance': self.plugin_instance,
+            'status': 'failure',
+            'error': errorMessage
+        })
 
     def report_task_success(self, taskId, jsonld):
         request_url = "{}/v1/tasks/{}".format(self.controller_base_uri, taskId)
@@ -50,9 +56,9 @@ class Worker(object):
     def run(self):
         while True:
             request_url = "{}/v1/tasks/?pluginId={}&pluginInstance={}".format(
-                os.environ['CONTROLLER_BASE_URI'],
-                os.environ['PLUGIN_ID'],
-                os.environ['POD_NAME']
+                self.controller_base_uri,
+                self.plugin_id,
+                self.plugin_instance
                 )
             response = requests.get(request_url)
 
@@ -71,7 +77,7 @@ class Worker(object):
                     result = self.task_handler(meta, jsonld, url)
                     self.report_task_success(meta['task']['_id'], result)
                 except Exception as exp:
-                    self.report_task_failure(exp)
+                    self.report_task_failure(meta['task']['_id'], str(exp))
 
             elif response.status_code == 404:
                 time.sleep(1)
