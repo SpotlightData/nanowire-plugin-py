@@ -46,12 +46,11 @@ logger = logging.getLogger("nanowire-plugin")
 
 #This is the worker that does the uploading
 class GroupWorker(object):
-    def __init__(self, function, minio_client, monitor_url, debug_mode):
+    def __init__(self, function, minio_client, monitor_url):
         
         self.function = function
         self.minio_client = minio_client
         self.monitor_url = monitor_url
-        self.debug_mode = debug_mode
         self.connect_max_retries=5
 
             
@@ -98,12 +97,8 @@ class GroupWorker(object):
                                 result = run_group_function(self.function, read_obj, write_obj, meta)
                                 
                             except Exception as exp:
-                                if self.debug_mode > 0:
-                                    result = str(traceback.format_exc())
-                                    logger.info("THERE WAS A PROBLEM RUNNING THE MAIN FUNCTION: %s"%str(result))
-                                else:
-                                    result = str(exp)
-                                    logger.info("THERE WAS A PROBLEM RUNNING THE MAIN FUNCTION: %s"%str(result))
+                                result = str(exp)
+                                logger.info("THERE WAS A PROBLEM RUNNING THE MAIN FUNCTION: %s"%str(result))
                                     
                         else:
                             result = "GROUP TARBALL IS MISSING"
@@ -142,7 +137,7 @@ class GroupWorker(object):
     
                     #logger.info(json.dumps(result))
                     #logger.info("++++++++++++++++++++++++++++++++++++++++++++++++++++++++")
-                    send(meta, result, self.minio_client, self.debug_mode)
+                    send(meta, result)
                     
                 
             elif code == 404:
@@ -479,7 +474,7 @@ def run_group_function(function , read_tool, write_tool, meta):
 
 
 
-def group_bind(function, version="1.0.0", debug_mode=0):
+def group_bind(function, version="1.0.0"):
     """binds a function to the input message queue"""
     
     #set up the logging
@@ -504,7 +499,7 @@ def group_bind(function, version="1.0.0", debug_mode=0):
 
     monitor_url = environ["MONITOR_URL"]
 
-    worker = GroupWorker(function, minio_client, monitor_url, debug_mode)
+    worker = GroupWorker(function, minio_client, monitor_url)
     logger.info("Starting consuming")
     worker.run()
                 
