@@ -18,16 +18,16 @@ import time
 import traceback
 import urllib.request
 
-from nanowire_plugin import report_task_success, report_task_failure
-
-#set up the logger globally
-logger = logging.getLogger("nanowire-plugin")
+import logging
+logger = logging.getLogger(__name__)
 
 class Worker(object):
     task_handler = None
     controller_base_uri = None
     plugin_id = None
     pod_name = None
+
+    is_connected = False
 
 
     def __init__(self, task_handler):
@@ -54,13 +54,25 @@ class Worker(object):
         })
 
     def run(self):
+        logging.info("Handling tasks for {} as {}".format(self.plugin_id, self.plugin_instance))
         while True:
             request_url = "{}/v1/tasks/?pluginId={}&pluginInstance={}".format(
                 self.controller_base_uri,
                 self.plugin_id,
                 self.plugin_instance
                 )
-            response = requests.get(request_url)
+            response = None
+            try:
+                response = requests.get(request_url)
+                if not self.is_connected:
+                    logger.info("Connected to controller at {}".format(self.controller_base_uri))
+                    self.is_connected = True
+            except Exception as e:
+                if not self.is_connected:
+                    logger.info(e)
+                    self.is_connected = False
+                time.sleep(1)
+                continue
 
             if response.status_code == 200:
                 payload = response.json()
@@ -70,7 +82,7 @@ class Worker(object):
 
                 if meta['job']['workflow']['type'] == 'GROUP':
                     logger.critical("Request for single task returned a group task")
-                    report_task_failure(meta, 'received a group job for some reason')
+                    self.report_task_failure(meta['task']['_id'], 'received a group job for some reason')
                     return
 
                 try:
