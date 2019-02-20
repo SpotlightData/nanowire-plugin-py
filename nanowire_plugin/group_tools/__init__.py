@@ -13,7 +13,6 @@ Created on Fri Mar 23 11:33:24 2018
 ### Group specific tools ###
 ############################
 
-from minio import Minio
 import subprocess
 import os
 import tarfile
@@ -109,7 +108,6 @@ class GroupWorker(object):
             
                     #send the result to minio and close everything down
                     minio_sender = Minio_tool(self.minio_client)
-            
             
                     if not isinstance(result, str):
             
