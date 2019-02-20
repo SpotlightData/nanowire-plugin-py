@@ -16,7 +16,9 @@ import requests
 import sys
 import time
 import traceback
-import urllib.request
+
+from requests.adapters import HTTPAdapter
+from requests.packages.urllib3.util.retry import Retry
 
 import logging
 logger = logging.getLogger(__name__)
@@ -29,6 +31,21 @@ class Worker(object):
 
     is_connected = False
 
+    def _retriable_request_session(self, retries=3, backoff_factor=0.3,
+                status_forcelist=(500, 502, 504), session=None):
+
+        session = session or requests.Session()
+        retry = Retry(
+            total=retries,
+            read=retries,
+            connect=retries,
+            backoff_factor=backoff_factor,
+            status_forcelist=status_forcelist,
+        )
+        adapter = HTTPAdapter(max_retries=retry)
+        session.mount('http://', adapter)
+        session.mount('https://', adapter)
+        return session
 
     def __init__(self, task_handler):
         logging.debug("Constructing new single file worker for " + str(task_handler))
@@ -68,8 +85,8 @@ class Worker(object):
                     logger.info("Connected to controller at {}".format(self.controller_base_uri))
                     self.is_connected = True
             except Exception as e:
-                if not self.is_connected:
-                    logger.info(e)
+                logger.info("Failed to connect to controller: " + str(e))
+                if self.is_connected:
                     self.is_connected = False
                 time.sleep(1)
                 continue

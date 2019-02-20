@@ -257,9 +257,9 @@ class writer():
             group_store_dict['doc_as_upsert'] = True
             group_store_dict['doc'] = {}
             group_store_dict['doc']['meta'] = {}
-            group_store_dict['doc']['meta']['userId'] = self.meta['user']['_id']
-            group_store_dict['doc']['meta']['projectId'] = self.meta['project']['_id']
-            group_store_dict['doc']['meta']['jobId'] = self.meta['job']['_id']
+            group_store_dict['doc']['meta']['userId'] = self.meta['task']['userId']
+            group_store_dict['doc']['meta']['projectId'] = self.meta['task']['projectId']
+            group_store_dict['doc']['meta']['jobId'] = self.meta['task']['jobId']
             group_store_dict['doc']['meta']['taskId'] = self.meta['task']['_id']
             group_store_dict['doc']['meta']['storedAt'] = datetime.datetime.utcnow().isoformat()
             group_store_dict['doc']['jsonLD'] = group_jsonld

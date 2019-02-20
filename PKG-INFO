@@ -1,6 +1,6 @@
 Metadata-Version: 1.2
 Name: nanowire_plugin
-Version: 0.14.8
+Version: 0.14.10
 Summary: Tool for creating python nanowire plugins
 Home-page: https://github.com/SpotlightData/nanowire-plugin-py
 Author: Stuart Bowe/Barnaby "Southclaws" Keene
