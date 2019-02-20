@@ -264,7 +264,7 @@ class writer():
             group_store_dict['doc']['meta'] = {}
             group_store_dict['doc']['meta']['userId'] = self.meta['task']['userId']
             group_store_dict['doc']['meta']['projectId'] = self.meta['task']['projectId']
-            group_store_dict['doc']['meta']['jobId'] = self.meta['task']['taskId']
+            group_store_dict['doc']['meta']['jobId'] = self.meta['task']['jobId']
             group_store_dict['doc']['meta']['taskId'] = self.meta['task']['_id']
             group_store_dict['doc']['meta']['storedAt'] = datetime.datetime.utcnow().isoformat()
             group_store_dict['doc']['jsonLD'] = group_jsonld
