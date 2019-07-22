@@ -1,4 +1,4 @@
-Metadata-Version: 1.2
+Metadata-Version: 1.0.2
 Name: nanowire_plugin
 Version: 0.14.12
 Summary: Tool for creating python nanowire plugins
