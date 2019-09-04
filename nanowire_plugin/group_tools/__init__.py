@@ -146,7 +146,15 @@ class GroupWorker(object):
                     
                 
             elif code == 404:
-                time.sleep(1)
+                if self.backoff == 0:
+                    logger.warning("FAILED TO CONNECT TO CONTROLLER, STARTING BACKOFF")
+                self.backoff = min(self.backoff + 1, 30)
+                
+            #this controls the backoff if we can't connect
+            else:
+                if self.backoff == 0:
+                    logger.warning("FAILED TO CONNECT TO CONTROLLER, STARTING BACKOFF")
+                self.backoff = min(self.backoff + 1, 30)
                 
                 
 

@@ -59,7 +59,7 @@ class Worker(object):
 
             message = requests.get(os.environ['CONTROLLER_BASE_URI'] + '/v1/tasks/?pluginId=' +
                                    os.environ['PLUGIN_ID'] + '&pluginInstance=' + os.environ['POD_NAME'])
-
+            
             # print("-------------------")
             # print(message.status_code)
             # print(dir(message))
@@ -108,12 +108,16 @@ class Worker(object):
                                 str(datetime.datetime.now()))
                     logger.info("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
 
+            #404 backoff
             elif code == 404:
-                time.sleep(2)
+                if self.backoff == 0:
+                    logger.warning("FAILED TO CONNECT TO CONTROLLER, STARTING BACKOFF")
+                self.backoff = min(self.backoff + 1, 30)
+                
+            #this controls the backoff if we can't connect
             else:
-                if self.backoff = 0:
-                    logger.warning(
-                        "FAILED TO CONNECT TO CONTROLLER, STARTING BACKOFF")
+                if self.backoff == 0:
+                    logger.warning("FAILED TO CONNECT TO CONTROLLER, STARTING BACKOFF")
                 self.backoff = min(self.backoff + 1, 30)
 
 
