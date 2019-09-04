@@ -40,8 +40,10 @@ from nanowire_plugin import send
 # set up the logger globally
 logger = logging.getLogger("nanowire-plugin")
 
+logging.getLogger("urllib").setLevel(logging.WARNING)
+logging.getLogger("urllib3").setLevel(logging.WARNING)
 
-# logging.basicConfig(level=10, stream=sys.stdout)
+logging.basicConfig(level=0, stream=sys.stdout)
 
 class Worker(object):
     def __init__(self, function, debug_mode, monitor_url, minio_client):
@@ -51,21 +53,36 @@ class Worker(object):
         self.monitor_url = monitor_url
         self.debug_mode = debug_mode
         self.backoff = 0
+        self.new = True
 
-        logging.debug("ESTABLISHED WORKER")
+        logger.info("ESTABLISHED WORKER")
 
     def run(self):
+        
+        logger.info("STARTING HOLD LOOP")
+        
         while True:
-
-            message = requests.get(os.environ['CONTROLLER_BASE_URI'] + '/v1/tasks/?pluginId=' +
-                                   os.environ['PLUGIN_ID'] + '&pluginInstance=' + os.environ['POD_NAME'])
             
-            # print("-------------------")
-            # print(message.status_code)
-            # print(dir(message))
-            # print(message.text)
-            # print("-------------------")
-            code = message.status_code
+            try:
+                
+                if 'REQUEST_TIMEOUT' in os.environ.keys():
+                    time_out = int(os.environ['REQUEST_TIMEOUT'])
+                else:
+                    time_out = 5
+                    
+                message = requests.get(os.environ['CONTROLLER_BASE_URI'] + '/v1/tasks/?pluginId=' +
+                                       os.environ['PLUGIN_ID'] + '&pluginInstance=' + os.environ['POD_NAME'], timeout=time_out)
+                
+                #logger.info("-------------------")
+                #logger.info(message.status_code)
+                #logger.info(dir(message))
+                #logger.info(message.text)
+                #logger.info("-------------------")
+                
+                code = message.status_code
+                
+            except:
+                code = 500
 
             if code == 200:
                 self.backoff = 0
@@ -107,18 +124,31 @@ class Worker(object):
                     logger.info("FINISHED RUNNING USER CODE AT %s" %
                                 str(datetime.datetime.now()))
                     logger.info("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
+                    
+                    self.new = True
 
             #404 backoff
             elif code == 404:
-                if self.backoff == 0:
-                    logger.warning("FAILED TO CONNECT TO CONTROLLER, STARTING BACKOFF")
-                self.backoff = min(self.backoff + 1, 30)
+                time.sleep(2)
+                
+                if self.new:
+                    
+                    logger.info("CONNECTED TO CONTROLER")
+                    self.new = False
+                    
+                self.backoff = 0
                 
             #this controls the backoff if we can't connect
             else:
                 if self.backoff == 0:
-                    logger.warning("FAILED TO CONNECT TO CONTROLLER, STARTING BACKOFF")
+                    logger.info("FAILED TO CONNECT TO CONTROLLER, STARTING BACKOFF")
+                    self.new = True
+                else:
+                    logger.info("TRIED TO CONNECT AGAIN AND FAILED, retrying in {0}s".format(min(self.backoff + 1, 30)))
+                    
                 self.backoff = min(self.backoff + 1, 30)
+                
+                time.sleep(self.backoff)
 
 
 def bind(function, debug_mode=0):
@@ -174,7 +204,7 @@ def bind(function, debug_mode=0):
 
     worker = Worker(function, debug_mode, monitor_url, minio_client)
     worker.run()
-    logger.warning("PAST THE RUN FUNCTION, SOMETHING HAS GONE VERY WRONG")
+    logger.critical("PAST THE RUN FUNCTION, SOMETHING HAS GONE VERY WRONG")
 
 
 def validate_single_file_function(function):

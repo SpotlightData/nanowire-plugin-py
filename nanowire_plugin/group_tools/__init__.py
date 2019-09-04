@@ -42,6 +42,8 @@ import urllib
 #set up the logger globally
 logger = logging.getLogger("nanowire-plugin")
 
+logging.getLogger("urllib").setLevel(logging.WARNING)
+logging.getLogger("urllib3").setLevel(logging.WARNING)
 
 
 #This is the worker that does the uploading
@@ -57,9 +59,20 @@ class GroupWorker(object):
             
     def run(self):
         while True:
-            message = requests.get(os.environ['CONTROLLER_BASE_URI'] + '/v1/tasks/?pluginId=' + os.environ['PLUGIN_ID'] + '&pluginInstance=' + os.environ['POD_NAME'])
             
-            code = message.status_code
+            try:
+                if 'REQUEST_TIMEOUT' in os.environ.keys():
+                    time_out = int(os.environ['REQUEST_TIMEOUT'])
+                else:
+                    time_out = 5
+    
+                message = requests.get(os.environ['CONTROLLER_BASE_URI'] + '/v1/tasks/?pluginId=' + os.environ['PLUGIN_ID'] + '&pluginInstance=' + os.environ['POD_NAME'], timeout = time_out)
+                
+                code = message.status_code
+                
+            except:
+                code = 500
+            
             
             if code == 200:
                 
@@ -146,15 +159,22 @@ class GroupWorker(object):
                     
                 
             elif code == 404:
-                if self.backoff == 0:
-                    logger.warning("FAILED TO CONNECT TO CONTROLLER, STARTING BACKOFF")
-                self.backoff = min(self.backoff + 1, 30)
+                time.sleep(2)
+                if self.new:
+                    self.new = False
+                    logger.warning("CONNECTED TO CONTROLER")
                 
             #this controls the backoff if we can't connect
             else:
                 if self.backoff == 0:
                     logger.warning("FAILED TO CONNECT TO CONTROLLER, STARTING BACKOFF")
+                else:
+                    logger.warning("TRIED TO CONNECT AGAIN AND FAILED, retrying in {0}s".format(min(self.backoff + 1, 30)))
                 self.backoff = min(self.backoff + 1, 30)
+                
+                time.sleep(self.backoff)
+                
+                
                 
                 
 
