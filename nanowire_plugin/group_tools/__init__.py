@@ -55,6 +55,8 @@ class GroupWorker(object):
         self.monitor_url = monitor_url
         self.debug_mode = debug_mode
         self.connect_max_retries=5
+        self.new = True
+        self.backoff = 0
 
             
     def run(self):
@@ -156,14 +158,16 @@ class GroupWorker(object):
                     #logger.info(json.dumps(result))
                     #logger.info("++++++++++++++++++++++++++++++++++++++++++++++++++++++++")
                     send(meta, result, self.minio_client, self.debug_mode)
-                    
+                
+                self.backoff = 0
                 
             elif code == 404:
                 time.sleep(2)
                 if self.new:
                     self.new = False
+                    self.backoff = 0
                     logger.warning("CONNECTED TO CONTROLER")
-                
+                    
             #this controls the backoff if we can't connect
             else:
                 if self.backoff == 0:
@@ -174,9 +178,7 @@ class GroupWorker(object):
                 
                 time.sleep(self.backoff)
                 
-                
-                
-                
+                self.new = False
 
 #check the meta to see if we're working with groups
 def check_for_group(meta):
